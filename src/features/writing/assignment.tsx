@@ -5,12 +5,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Main } from '@/components/layout/main'
-import {
-  dashboardKey,
-  request,
-  type AssignmentDetail,
-  type DashboardData,
-} from './api'
+import { dashboardOptions, type AssignmentDetail } from './api'
 import { AssignmentDialog } from './dashboard'
 import { Deadline, PaperLanguage, Requirements, StatusBadge } from './ui'
 import { Workspace } from './workspace'
@@ -165,10 +160,7 @@ function AssignmentActions({
   person: Identity
 }) {
   const router = useRouter()
-  const classes = useQuery({
-    queryKey: [...dashboardKey, person.id],
-    queryFn: () => request<DashboardData>('/api/dashboard'),
-  })
+  const classes = useQuery(dashboardOptions(person.id))
   const targets = classes.data?.classes.filter((item) => !item.archived) ?? []
   return (
     <div className='flex flex-wrap gap-2'>

@@ -121,7 +121,15 @@ export async function writingRoutes(app: FastifyInstance) {
           .where(eq(classroom.teacherId, person.id))
           .orderBy(classroom.name),
         db
-          .select({ ...assignmentFields, classroomName: classroom.name })
+          .select({
+            ...assignmentFields,
+            classroomName: classroom.name,
+            pendingSubmissions: sql<number>`(
+              select count(*)::int from ${submission}
+              where ${submission.assignmentId} = ${assignment.id}
+                and ${submission.status} = 'submitted'
+            )`,
+          })
           .from(assignment)
           .innerJoin(classroom, eq(classroom.id, assignment.classroomId))
           .where(eq(classroom.teacherId, person.id))

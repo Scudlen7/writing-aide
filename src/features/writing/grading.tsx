@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   blockText,
   type AiReview,
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Main } from '@/components/layout/main'
-import { request, type GradingDetail } from './api'
+import { dashboardKey, request, type GradingDetail } from './api'
 import { AssignmentHeading } from './assignment'
 import { ReviewPanel } from './reviews'
 import { Field, Problem, Requirements, StatusBadge } from './ui'
@@ -18,6 +19,7 @@ import { GradeResult, WrittenWork } from './workspace'
 
 export function GradingPage({ detail }: { detail: GradingDetail }) {
   const { t } = useTranslation()
+  const client = useQueryClient()
   const { assignment } = detail
   const [submission, setSubmission] = useState(detail.submission)
   const [reviews, setReviews] = useState(detail.reviews)
@@ -46,6 +48,7 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
         }
       )
       setSubmission({ ...result, studentName: submission.studentName })
+      void client.invalidateQueries({ queryKey: dashboardKey })
     } catch (cause) {
       setError(cause)
     } finally {

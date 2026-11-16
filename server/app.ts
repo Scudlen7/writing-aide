@@ -3,6 +3,7 @@ import { fromNodeHeaders } from 'better-auth/node'
 import fastify from 'fastify'
 import path from 'node:path'
 import { auth } from './auth.ts'
+import { chatRoutes } from './chat.ts'
 import { config } from './config.ts'
 import { ApiError } from './errors.ts'
 import { managementRoutes } from './management.ts'
@@ -74,6 +75,7 @@ export function createApp(
   })
 
   app.register(writingRoutes)
+  app.register(chatRoutes)
   app.register(managementRoutes)
   app.register(settingsRoutes)
 

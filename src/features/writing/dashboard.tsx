@@ -24,22 +24,24 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Main } from '@/components/layout/main'
-import { dashboardKey, RequestError, request, type DashboardData } from './api'
+import { dashboardKey, dashboardOptions, RequestError, request } from './api'
 import { Deadline, Field, PaperLanguage, Problem, StatusBadge } from './ui'
 
 const selectClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm'
 
-export function WritingDashboard({ person }: { person: Identity }) {
+export function WritingDashboard({
+  person,
+  classesOnly = false,
+}: {
+  person: Identity
+  classesOnly?: boolean
+}) {
   const { t } = useTranslation()
   const [now] = useState(Date.now)
   const [classSearch, setClassSearch] = useState('')
   const teacher = person.role === 'teacher'
-  const data = useQuery({
-    queryKey: [...dashboardKey, person.id],
-    queryFn: () => request<DashboardData>('/api/dashboard'),
-    staleTime: 0,
-  })
+  const data = useQuery(dashboardOptions(person.id))
   const activeClasses =
     data.data?.classes.filter((item) => !item.archived) ?? []
   const visibleClasses =
@@ -58,13 +60,22 @@ export function WritingDashboard({ person }: { person: Identity }) {
       <section className='flex flex-wrap items-end justify-between gap-4 border-b pb-6'>
         <div>
           <h1 className='text-3xl font-semibold tracking-tight'>
-            {t(teacher ? 'assignments' : 'yourAssignments')}
+            {t(
+              classesOnly
+                ? 'classManagement'
+                : teacher
+                  ? 'assignments'
+                  : 'yourAssignments'
+            )}
           </h1>
-          <p className='mt-2 text-sm text-muted-foreground'>
-            {t(teacher ? 'teacherIntro' : 'studentIntro')}
-          </p>
+          {!classesOnly && (
+            <p className='mt-2 text-sm text-muted-foreground'>
+              {t(teacher ? 'teacherIntro' : 'studentIntro')}
+            </p>
+          )}
         </div>
-        {teacher && activeClasses.length > 0 && (
+        {classesOnly && data.isSuccess && <ClassDialog teacher />}
+        {!classesOnly && teacher && activeClasses.length > 0 && (
           <AssignmentDialog classes={activeClasses} />
         )}
       </section>
@@ -77,85 +88,89 @@ export function WritingDashboard({ person }: { person: Identity }) {
           </Button>
         </div>
       )}
-      {data.data && (
+      {data.isSuccess && (
         <>
-          <section aria-label={t(teacher ? 'assignments' : 'yourAssignments')}>
-            {data.data.assignments.length ? (
-              <ul className='grid gap-3'>
-                {data.data.assignments.map((item) => (
-                  <li key={item.id}>
-                    <Card className='gap-0 py-4 shadow-none'>
-                      <CardContent className='flex flex-wrap items-center justify-between gap-4 px-4 sm:px-5'>
-                        <div className='min-w-0 space-y-2'>
-                          <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
-                            <p className='font-semibold wrap-break-word'>
-                              {item.title}
-                            </p>
-                            <PaperLanguage language={item.language} />
-                            {item.archived && (
-                              <span className='text-xs text-muted-foreground'>
-                                {t('archived')}
-                              </span>
-                            )}
-                            {!teacher && (
-                              <StatusBadge
-                                status={item.status}
-                                dueAt={item.dueAt}
-                              />
-                            )}
-                          </div>
-                          <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground'>
-                            <span className='wrap-break-word'>
-                              {item.classroomName}
-                            </span>
-                            <Deadline dueAt={item.dueAt} />
-                            {!teacher &&
-                              item.stage &&
-                              item.status === 'draft' && (
-                                <span>{t(`stage.${item.stage}`)}</span>
+          {!classesOnly && (
+            <section
+              aria-label={t(teacher ? 'assignments' : 'yourAssignments')}
+            >
+              {data.data.assignments.length ? (
+                <ul className='grid gap-3'>
+                  {data.data.assignments.map((item) => (
+                    <li key={item.id}>
+                      <Card className='gap-0 py-4 shadow-none'>
+                        <CardContent className='flex flex-wrap items-center justify-between gap-4 px-4 sm:px-5'>
+                          <div className='min-w-0 space-y-2'>
+                            <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
+                              <p className='font-semibold wrap-break-word'>
+                                {item.title}
+                              </p>
+                              <PaperLanguage language={item.language} />
+                              {item.archived && (
+                                <span className='text-xs text-muted-foreground'>
+                                  {t('archived')}
+                                </span>
                               )}
+                              {!teacher && (
+                                <StatusBadge
+                                  status={item.status}
+                                  dueAt={item.dueAt}
+                                />
+                              )}
+                            </div>
+                            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground'>
+                              <span className='wrap-break-word'>
+                                {item.classroomName}
+                              </span>
+                              <Deadline dueAt={item.dueAt} />
+                              {!teacher &&
+                                item.stage &&
+                                item.status === 'draft' && (
+                                  <span>{t(`stage.${item.stage}`)}</span>
+                                )}
+                            </div>
                           </div>
-                        </div>
-                        <Button variant='outline' size='sm' asChild>
-                          <Link
-                            to='/assignments/$assignmentId'
-                            params={{ assignmentId: item.id }}
-                          >
-                            {t(
-                              teacher ||
-                                item.archived ||
-                                item.status === 'graded' ||
-                                item.status === 'submitted' ||
-                                new Date(item.dueAt).getTime() <= now
-                                ? 'openAssignment'
-                                : item.status === 'draft'
-                                  ? 'continueWriting'
-                                  : 'startWriting'
-                            )}
-                            <ArrowRight />
-                          </Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className='rounded-xl border border-dashed p-5 text-sm text-muted-foreground'>
-                {t(teacher ? 'noTeacherAssignments' : 'noStudentAssignments')}
-              </p>
-            )}
-          </section>
-          <section aria-labelledby='class-list'>
-            <div className='mb-3 flex flex-wrap items-center justify-between gap-3'>
-              <div className='flex items-center gap-2'>
-                <GraduationCap size={19} className='text-muted-foreground' />
-                <h2 id='class-list' className='font-semibold'>
-                  {t('classes')}
-                </h2>
+                          <Button variant='outline' size='sm' asChild>
+                            <Link
+                              to='/assignments/$assignmentId'
+                              params={{ assignmentId: item.id }}
+                            >
+                              {t(
+                                teacher ||
+                                  item.archived ||
+                                  item.status === 'graded' ||
+                                  item.status === 'submitted' ||
+                                  new Date(item.dueAt).getTime() <= now
+                                  ? 'openAssignment'
+                                  : item.status === 'draft'
+                                    ? 'continueWriting'
+                                    : 'startWriting'
+                              )}
+                              <ArrowRight />
+                            </Link>
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className='rounded-xl border border-dashed p-5 text-sm text-muted-foreground'>
+                  {t(teacher ? 'noTeacherAssignments' : 'noStudentAssignments')}
+                </p>
+              )}
+            </section>
+          )}
+          <section aria-label={t('classes')}>
+            {!classesOnly && (
+              <div className='mb-3 flex flex-wrap items-center justify-between gap-3'>
+                <div className='flex items-center gap-2'>
+                  <GraduationCap size={19} className='text-muted-foreground' />
+                  <h2 className='font-semibold'>{t('classes')}</h2>
+                </div>
+                <ClassDialog teacher={teacher} />
               </div>
-              <ClassDialog teacher={teacher} />
-            </div>
+            )}
             {teacher && data.data.classes.length > 0 && (
               <Input
                 className='mb-3 max-w-sm'

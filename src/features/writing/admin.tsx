@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Main } from '@/components/layout/main'
 import { classesKey, request } from './api'
 import type { ManagedClass } from './classes'
@@ -30,7 +29,11 @@ type DirectoryAssignment = Assignment & {
   started: boolean
 }
 
-export function AdminWorkbench() {
+export function AdminWorkbench({
+  section,
+}: {
+  section?: 'users' | 'classes' | 'assignments'
+}) {
   const { t } = useTranslation()
   const client = useQueryClient()
   const router = useRouter()
@@ -41,10 +44,12 @@ export function AdminWorkbench() {
   const classes = useQuery({
     queryKey: ['writing-admin', 'classes'],
     queryFn: () => request<DirectoryClass[]>('/api/admin/classes'),
+    enabled: section !== 'users',
   })
   const assignments = useQuery({
     queryKey: ['writing-admin', 'assignments'],
     queryFn: () => request<DirectoryAssignment[]>('/api/admin/assignments'),
+    enabled: !section || section === 'assignments',
   })
 
   async function refresh() {
@@ -65,36 +70,55 @@ export function AdminWorkbench() {
       className='mx-auto w-full max-w-6xl space-y-6 px-4 py-7 sm:px-8'
     >
       <h1 className='text-3xl font-semibold tracking-tight'>
-        {t('adminWorkbench')}
+        {t(
+          section === 'users'
+            ? 'userManagement'
+            : section === 'classes'
+              ? 'classManagement'
+              : section === 'assignments'
+                ? 'assignmentManagement'
+                : 'adminWorkbench'
+        )}
       </h1>
-      <div className='grid gap-3 sm:grid-cols-3'>
-        {(
-          [
-            ['users', Users, users.data?.length],
-            ['classesDirectory', GraduationCap, classes.data?.length],
-            ['assignments', BookOpen, assignments.data?.length],
-          ] as const
-        ).map(([label, Icon, total]) => (
-          <Card className='gap-2' key={label}>
-            <CardHeader className='flex items-center justify-between'>
-              <CardTitle className='text-sm font-medium'>{t(label)}</CardTitle>
-              <Icon size={16} className='text-muted-foreground' />
-            </CardHeader>
-            <CardContent className='text-2xl font-semibold tabular-nums'>
-              {total ?? '–'}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <Tabs defaultValue='users'>
-        <TabsList>
-          <TabsTrigger value='users'>{t('users')}</TabsTrigger>
-          <TabsTrigger value='classes'>{t('classesDirectory')}</TabsTrigger>
-          <TabsTrigger value='assignments'>{t('assignments')}</TabsTrigger>
-        </TabsList>
-        <TabsContent value='users' className='pt-3'>
+      {!section && (
+        <div className='grid gap-3 sm:grid-cols-3'>
+          {(
+            [
+              ['userManagement', '/admin/users', Users, users.data?.length],
+              [
+                'classManagement',
+                '/admin/classes',
+                GraduationCap,
+                classes.data?.length,
+              ],
+              [
+                'assignmentManagement',
+                '/admin/assignments',
+                BookOpen,
+                assignments.data?.length,
+              ],
+            ] as const
+          ).map(([label, path, Icon, total]) => (
+            <Link to={path} key={path} className='rounded-xl outline-offset-4'>
+              <Card className='gap-2 transition-colors hover:bg-accent/50'>
+                <CardHeader className='flex items-center justify-between'>
+                  <CardTitle className='text-sm font-medium'>
+                    {t(label)}
+                  </CardTitle>
+                  <Icon size={16} className='text-muted-foreground' />
+                </CardHeader>
+                <CardContent className='text-2xl font-semibold tabular-nums'>
+                  {total ?? '–'}
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+      {section === 'users' && (
+        <>
           <QueryStatus query={users} />
-          {users.data && (
+          {users.isSuccess && (
             <UsersDirectory
               rows={users.data}
               refresh={async () => {
@@ -103,29 +127,36 @@ export function AdminWorkbench() {
               }}
             />
           )}
-        </TabsContent>
-        <TabsContent value='classes' className='pt-3'>
+        </>
+      )}
+      {section === 'classes' && (
+        <>
+          <QueryStatus query={users} />
           <QueryStatus query={classes} />
-          {classes.data && (
+          {classes.isSuccess && users.isSuccess && (
             <ClassesDirectory
               rows={classes.data}
               teachers={teachers}
               refresh={refresh}
             />
           )}
-        </TabsContent>
-        <TabsContent value='assignments' className='pt-3'>
+        </>
+      )}
+      {section === 'assignments' && (
+        <>
+          <QueryStatus query={users} />
+          <QueryStatus query={classes} />
           <QueryStatus query={assignments} />
-          {assignments.data && (
+          {assignments.isSuccess && classes.isSuccess && users.isSuccess && (
             <AssignmentsDirectory
               rows={assignments.data}
-              classes={classes.data ?? []}
+              classes={classes.data}
               teachers={teachers}
               refresh={refresh}
             />
           )}
-        </TabsContent>
-      </Tabs>
+        </>
+      )}
     </Main>
   )
 }

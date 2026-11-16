@@ -1,5 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { AdminWorkbench } from '@/features/writing/admin'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { RequestError } from '@/features/writing/api'
 
 export const Route = createFileRoute('/_authenticated/admin')({
@@ -7,5 +6,5 @@ export const Route = createFileRoute('/_authenticated/admin')({
     if (context.person.role !== 'admin')
       throw new RequestError(403, 'forbidden')
   },
-  component: AdminWorkbench,
+  component: Outlet,
 })

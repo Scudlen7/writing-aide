@@ -34,7 +34,7 @@ export function WritingSignIn({
           redirectTo
         ) ||
           /^\/classes\/[\da-f-]+\/?$/i.test(redirectTo) ||
-          /^\/(?:admin|notifications|settings(?:\/(?:account|appearance|notifications))?)\/?$/.test(
+          /^\/(?:admin(?:\/(?:users|classes|assignments))?|classes|grading|chats|notifications|settings(?:\/(?:account|appearance|notifications))?)\/?$/.test(
             redirectTo
           ))
       await router.navigate({

@@ -255,4 +255,5 @@ export interface Notification {
 export type AssignmentListItem = Assignment & {
   status: Submission['status'] | null
   stage: Stage | null
+  pendingSubmissions?: number
 }

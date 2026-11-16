@@ -2,7 +2,17 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router'
 import type { Identity } from '@writing/writing'
-import { Bell, BookOpen, LayoutGrid, LogOut, Settings } from 'lucide-react'
+import {
+  Bell,
+  BookOpen,
+  ClipboardCheck,
+  GraduationCap,
+  LayoutGrid,
+  LogOut,
+  MessagesSquare,
+  Settings,
+  Users,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -22,8 +32,17 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { Header } from '@/components/layout/header'
+import { NavGroup } from '@/components/layout/nav-group'
 import { NavUser } from '@/components/layout/nav-user'
-import { identityKey, notificationsKey, request, session } from './api'
+import type { NavLink } from '@/components/layout/types'
+import { chatUnreadOptions } from '@/features/chats/api'
+import {
+  dashboardOptions,
+  identityKey,
+  notificationsKey,
+  request,
+  session,
+} from './api'
 import { LanguageSwitch, Problem, WritingThemeSwitch } from './ui'
 
 export function WritingShell({ person }: { person: Identity }) {
@@ -95,16 +114,7 @@ export function WritingShell({ person }: { person: Identity }) {
           </SidebarMenu>
         </SidebarHeader>
         <SidebarContent className='px-3'>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip={t(home)}>
-                <Link to='/'>
-                  <LayoutGrid />
-                  {t(home)}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <WritingNavigation person={person} />
         </SidebarContent>
         <SidebarFooter className='border-t px-3 py-4'>
           <NavUser
@@ -150,7 +160,9 @@ export function WritingShell({ person }: { person: Identity }) {
       </Sidebar>
       <SidebarInset className='@container/content min-w-0 bg-background'>
         <Header className='border-b bg-card' triggerLabel={t('toggleSidebar')}>
-          <span className='hidden font-medium sm:inline'>{t(home)}</span>
+          <span className='hidden font-medium sm:inline'>
+            {t(pathname.replace(/\/$/, '') === '/chats' ? 'chats' : home)}
+          </span>
           <div className='ms-auto flex items-center gap-1 sm:gap-2'>
             <LanguageSwitch />
             <WritingThemeSwitch />
@@ -164,6 +176,114 @@ export function WritingShell({ person }: { person: Identity }) {
         <Outlet />
       </SidebarInset>
     </SidebarProvider>
+  )
+}
+
+function WritingNavigation({ person }: { person: Identity }) {
+  const { t } = useTranslation()
+  const unread = useQuery({
+    ...chatUnreadOptions(person.id),
+    enabled: person.role !== 'admin',
+  })
+  const chatLink: NavLink = {
+    title: t('chats'),
+    url: '/chats',
+    icon: MessagesSquare,
+    badge:
+      unread.isSuccess && unread.data.count
+        ? String(unread.data.count)
+        : undefined,
+  }
+  if (person.role === 'admin') {
+    return (
+      <>
+        <NavGroup
+          title={t('overviewNavigation')}
+          items={[
+            { title: t('adminWorkbench'), url: '/admin', icon: LayoutGrid },
+          ]}
+        />
+        <NavGroup
+          title={t('platformManagement')}
+          items={[
+            { title: t('userManagement'), url: '/admin/users', icon: Users },
+            {
+              title: t('classManagement'),
+              url: '/admin/classes',
+              icon: GraduationCap,
+              activePrefix: '/classes',
+            },
+            {
+              title: t('assignmentManagement'),
+              url: '/admin/assignments',
+              icon: BookOpen,
+            },
+          ]}
+        />
+      </>
+    )
+  }
+  if (person.role === 'teacher') {
+    return (
+      <NavGroup
+        title={t('teachingNavigation')}
+        items={[
+          { title: t('home'), url: '/', icon: LayoutGrid },
+          {
+            title: t('classManagement'),
+            url: '/classes',
+            icon: GraduationCap,
+            activePrefix: '/classes',
+          },
+          {
+            title: t('gradingQueue'),
+            url: '/grading',
+            icon: ClipboardCheck,
+            activePrefix: '/assignments',
+          },
+          chatLink,
+        ]}
+      />
+    )
+  }
+  return <StudentNavigation personId={person.id} chatLink={chatLink} />
+}
+
+function StudentNavigation({
+  personId,
+  chatLink,
+}: {
+  personId: string
+  chatLink: NavLink
+}) {
+  const { t } = useTranslation()
+  const dashboard = useQuery(dashboardOptions(personId))
+  return (
+    <NavGroup
+      title={t('courseNavigation')}
+      items={[
+        { title: t('home'), url: '/', icon: LayoutGrid },
+        {
+          title: t('yourAssignments'),
+          icon: BookOpen,
+          activePrefix: '/assignments',
+          items: dashboard.isSuccess
+            ? dashboard.data.assignments.map((assignment) => ({
+                title: assignment.title,
+                url: `/assignments/${assignment.id}`,
+              }))
+            : [],
+          emptyLabel: t(
+            dashboard.isPending
+              ? 'loading'
+              : dashboard.isError
+                ? 'assignmentsUnavailable'
+                : 'noStudentAssignments'
+          ),
+        },
+        chatLink,
+      ]}
+    />
   )
 }
 

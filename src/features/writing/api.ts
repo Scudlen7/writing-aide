@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import type {
   AiReview,
   Assignment,
@@ -40,6 +41,14 @@ export const identityKey = (id: string) => ['writing-identity', id]
 export const notificationsKey = (id: string) => ['writing-notifications', id]
 export const dashboardKey = ['writing-dashboard']
 export const classesKey = ['writing-classes']
+
+export function dashboardOptions(personId: string) {
+  return queryOptions({
+    queryKey: [...dashboardKey, personId],
+    queryFn: () => request<DashboardData>('/api/dashboard'),
+    staleTime: 0,
+  })
+}
 
 export interface DashboardData {
   classes: Classroom[]

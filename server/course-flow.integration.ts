@@ -4,10 +4,18 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { test } from 'node:test'
+import {
+  chatPageSize,
+  type ChatContact,
+  type ChatConversation,
+  type ChatHistory,
+  type ChatMessage,
+} from '../shared/chat.ts'
 import type {
   AiReview,
   Assignment,
   AssignmentInput,
+  AssignmentListItem,
   Classroom,
   Identity,
   Notification,
@@ -75,13 +83,17 @@ test('Chinese and English course papers from class creation to feedback', async 
   assert.ok(address && typeof address === 'object')
   process.env.AI_BASE_URL = `http://127.0.0.1:${address.port}/v1`
 
-  const [{ createApp }, { db, pool }, { user }, { blockText, countWriting }] =
-    await Promise.all([
-      import('./app.ts'),
-      import('./db.ts'),
-      import('./schema.ts'),
-      import('../shared/writing.ts'),
-    ])
+  const [
+    { createApp },
+    { db, pool },
+    { chatMessage, user },
+    { blockText, countWriting },
+  ] = await Promise.all([
+    import('./app.ts'),
+    import('./db.ts'),
+    import('./schema.ts'),
+    import('../shared/writing.ts'),
+  ])
   const app = createApp()
   t.after(async () => {
     await app.close()
@@ -230,6 +242,181 @@ test('Chinese and English course papers from class creation to feedback', async 
     (
       await call<Notification[]>('GET', '/api/notifications', { cookie })
     ).body.filter((item) => item.assignmentId === assignmentId)
+
+  await t.test(
+    'private messages follow active shared classes and keep history on restoration',
+    async () => {
+      const chats = '/api/chats'
+      const thread = (person: { id: string }) => `${chats}/${person.id}`
+      const send = (
+        from: { cookie: string },
+        to: { id: string },
+        body: string,
+        status = 201,
+        clientId = randomUUID()
+      ) =>
+        call<ChatMessage>('POST', `${thread(to)}/messages`, {
+          cookie: from.cookie,
+          status,
+          payload: { clientId, body },
+        })
+      const unread = async (person: { cookie: string }) =>
+        (
+          await call<{ count: number }>('GET', `${chats}/unread`, {
+            cookie: person.cookie,
+          })
+        ).body.count
+
+      const unrelated = await signUp('Student in another class')
+      const { body: anotherClass } = await call<Classroom>(
+        'POST',
+        '/api/classes',
+        {
+          cookie: outsider.cookie,
+          payload: { name: 'Another class' },
+          status: 201,
+        }
+      )
+      await call('POST', '/api/classes/join', {
+        cookie: unrelated.cookie,
+        payload: { code: anotherClass.joinCode },
+      })
+      await call('GET', chats, { status: 401 })
+      await call('GET', chats, { cookie: admin.cookie, status: 403 })
+      await call('GET', thread(student), { cookie: admin.cookie, status: 403 })
+      await call('GET', thread(peer), { cookie: unrelated.cookie, status: 404 })
+      await send(student, unrelated, 'Cross-class contact', 404)
+      await send(student, student, 'Self-chat', 404)
+      await send(student, peer, '   ', 400)
+      await send(student, peer, 'x'.repeat(2001), 400)
+
+      const { body: contacts } = await call<ChatContact[]>(
+        'GET',
+        `${chats}/contacts`,
+        { cookie: student.cookie }
+      )
+      assert.deepEqual(
+        new Set(contacts.map(({ id }) => id)),
+        new Set([teacher.id, peer.id])
+      )
+      assert.ok(
+        contacts.every(
+          (contact) =>
+            contact.classrooms.includes('Renamed class') &&
+            !('email' in contact)
+        )
+      )
+
+      const clientId = randomUUID()
+      const [first, duplicate] = await Promise.all([
+        send(peer, student, '同班私信测试', 201, clientId),
+        send(peer, student, '同班私信测试', 201, clientId),
+      ])
+      assert.equal(first.body.id, duplicate.body.id)
+      const { body: teacherNote } = await send(
+        teacher,
+        student,
+        'Teacher feedback fixture'
+      )
+      await send(student, teacher, 'Acknowledged')
+      assert.equal(await unread(student), 2)
+      const { body: inbox } = await call<ChatConversation[]>('GET', chats, {
+        cookie: student.cookie,
+      })
+      assert.equal(inbox.length, 2)
+      assert.equal(
+        inbox.find(({ contact }) => contact.id === peer.id)?.unread,
+        1
+      )
+      const { body: history } = await call<ChatHistory>('GET', thread(peer), {
+        cookie: student.cookie,
+      })
+      assert.deepEqual(history.messages, [first.body])
+      assert.deepEqual(history.unreadIds, [first.body.id])
+      await call('PUT', `${thread(peer)}/read`, {
+        cookie: student.cookie,
+        payload: { ids: [first.body.id, teacherNote.id] },
+      })
+      assert.equal(await unread(student), 1)
+      await call('PUT', `${thread(teacher)}/read`, {
+        cookie: student.cookie,
+        payload: { ids: [teacherNote.id] },
+      })
+      assert.equal(await unread(student), 0)
+
+      await call('DELETE', `${coursePath}/students/${peer.id}`, {
+        cookie: teacher.cookie,
+        payload: { confirmed: true },
+      })
+      await call('GET', thread(peer), { cookie: student.cookie, status: 404 })
+      await call('PUT', `${thread(peer)}/read`, {
+        cookie: student.cookie,
+        payload: { ids: [first.body.id] },
+        status: 404,
+      })
+      const { body: hidden } = await call<ChatConversation[]>('GET', chats, {
+        cookie: student.cookie,
+      })
+      assert.deepEqual(
+        hidden.map(({ contact }) => contact.id),
+        [teacher.id]
+      )
+      await send(peer, student, 'Removed student', 404)
+      await call('POST', `${coursePath}/students`, {
+        cookie: teacher.cookie,
+        payload: { email: peer.email },
+      })
+
+      for (const person of [student, peer]) {
+        await call('POST', '/api/classes/join', {
+          cookie: person.cookie,
+          payload: { code: anotherClass.joinCode },
+        })
+      }
+      const archive = (classId: string, teacherId: string, archived: boolean) =>
+        call('PATCH', `/api/admin/classes/${classId}`, {
+          cookie: admin.cookie,
+          payload: { teacherId, archived, confirmed: true },
+        })
+      await archive(course.id, teacher.id, true)
+      const { body: shared } = await call<ChatHistory>('GET', thread(peer), {
+        cookie: student.cookie,
+      })
+      assert.deepEqual(shared.messages, [first.body])
+      await call('GET', thread(teacher), {
+        cookie: student.cookie,
+        status: 404,
+      })
+      await archive(anotherClass.id, outsider.id, true)
+      await call('GET', thread(peer), { cookie: student.cookie, status: 404 })
+      await archive(course.id, teacher.id, false)
+      const { body: restored } = await call<ChatHistory>('GET', thread(peer), {
+        cookie: student.cookie,
+      })
+      assert.deepEqual(restored.messages, [first.body])
+
+      await db.insert(chatMessage).values(
+        Array.from({ length: chatPageSize }, (_, index) => ({
+          senderId: student.id,
+          recipientId: peer.id,
+          clientId: randomUUID(),
+          body: `Page fixture ${index}`,
+        }))
+      )
+      const { body: latest } = await call<ChatHistory>('GET', thread(peer), {
+        cookie: student.cookie,
+      })
+      assert.equal(latest.messages.length, chatPageSize)
+      assert.equal(latest.hasOlder, true)
+      const { body: earlier } = await call<ChatHistory>(
+        'GET',
+        `${thread(peer)}?before=${latest.messages[0].id}`,
+        { cookie: student.cookie }
+      )
+      assert.deepEqual(earlier.messages, [first.body])
+      assert.equal(earlier.hasOlder, false)
+    }
+  )
 
   for (const language of ['zh-CN', 'en'] as const) {
     const assignmentInput: AssignmentInput = {
@@ -430,6 +617,23 @@ test('Chinese and English course papers from class creation to feedback', async 
     assert.equal(rechecked.work.reflection, 'Added evidence')
     const submitted = await save('reflect', 'submit', rechecked.version, {})
     assert.equal(submitted.status, 'submitted')
+    const dashboardAssignment = async (cookie: string) => {
+      const { body } = await call<{ assignments: AssignmentListItem[] }>(
+        'GET',
+        '/api/dashboard',
+        { cookie }
+      )
+      return body.assignments.find((item) => item.id === assignment.id)
+    }
+    assert.equal(
+      (await dashboardAssignment(teacher.cookie))?.pendingSubmissions,
+      1
+    )
+    assert.equal(
+      (await dashboardAssignment(student.cookie))?.pendingSubmissions,
+      undefined
+    )
+    assert.equal(await dashboardAssignment(outsider.cookie), undefined)
     assert.deepEqual(submitted.requirements, assignmentInput)
     assert.equal(
       (await readNotifications(teacher.cookie, assignment.id)).filter(
@@ -574,6 +778,10 @@ test('Chinese and English course papers from class creation to feedback', async 
       { cookie: student.cookie }
     )
     assert.equal(graded.submission.status, 'graded')
+    assert.equal(
+      (await dashboardAssignment(teacher.cookie))?.pendingSubmissions,
+      0
+    )
     assert.deepEqual(graded.submission.grade, grade)
     assert.deepEqual(graded.submission.work.draft, firstDocument)
     assert.deepEqual(graded.submission.work.revision, finalDocument)

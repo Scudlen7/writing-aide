@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm'
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -220,3 +222,29 @@ export const managementAudit = pgTable('management_audit', {
   action: text('action').notNull(),
   createdAt: date('created_at').notNull().defaultNow(),
 })
+
+export const chatMessage = pgTable(
+  'chat_message',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    senderId: text('sender_id')
+      .notNull()
+      .references(() => user.id),
+    recipientId: text('recipient_id')
+      .notNull()
+      .references(() => user.id),
+    clientId: uuid('client_id').notNull(),
+    body: text('body').notNull(),
+    createdAt: date('created_at').notNull().defaultNow(),
+    readAt: date('read_at'),
+  },
+  (table) => [
+    unique().on(table.senderId, table.clientId),
+    check(
+      'chat_message_distinct_participants',
+      sql`${table.senderId} <> ${table.recipientId}`
+    ),
+    index().on(table.senderId, table.recipientId, table.id),
+    index().on(table.recipientId, table.senderId, table.id),
+  ]
+)

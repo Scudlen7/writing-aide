@@ -49,7 +49,9 @@ export function ClassPage({
       className='mx-auto w-full max-w-6xl space-y-5 px-4 py-7 sm:px-8'
     >
       <Button asChild size='sm' variant='ghost'>
-        <Link to={person.role === 'admin' ? '/admin' : '/'}>{t('back')}</Link>
+        <Link to={person.role === 'admin' ? '/admin/classes' : '/classes'}>
+          {t('backToClasses')}
+        </Link>
       </Button>
       {detail.isPending && <p role='status'>{t('loading')}</p>}
       {detail.isError && (
