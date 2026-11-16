@@ -8,6 +8,20 @@
       "when": 1794827241777,
       "tag": "0000_known_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794838592013,
+      "tag": "0001_v2_workbench",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794850611765,
+      "tag": "0002_class_private_messages",
+      "breakpoints": true
     }
   ]
 }

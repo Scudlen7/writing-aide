@@ -13,6 +13,30 @@ export const stages = [
 ] as const
 export type Stage = (typeof stages)[number]
 
+export function stageComplete(stage: Stage, work: Work) {
+  switch (stage) {
+    case 'goals':
+      return Boolean(work.goal.trim())
+    case 'outline':
+      return Boolean(work.outline.trim())
+    case 'draft':
+      return Boolean(work.title.trim() && documentText(work.draft).trim())
+    case 'revise':
+      return Boolean(
+        (work.revisionTitle ?? work.title).trim() &&
+        documentText(work.revision).trim()
+      )
+    case 'reflect':
+      return Boolean(work.reflection.trim())
+  }
+}
+
+export function incompleteBefore(target: Stage, work: Work) {
+  return stages
+    .slice(0, stages.indexOf(target))
+    .find((step) => !stageComplete(step, work))
+}
+
 const inline = z.union([
   z.object({
     type: z.literal('text'),
@@ -42,15 +66,16 @@ export const emptyDocument: WritingDocument = {
   content: [{ type: 'paragraph' }],
 }
 
+export function blockText(block: WritingDocument['content'][number]) {
+  return (
+    block.content
+      ?.map((item) => (item.type === 'text' ? item.text : '\n'))
+      .join('') ?? ''
+  )
+}
+
 export function documentText(doc: WritingDocument) {
-  return doc.content
-    .map(
-      (node) =>
-        node.content
-          ?.map((item) => (item.type === 'text' ? item.text : '\n'))
-          .join('') ?? ''
-    )
-    .join('\n')
+  return doc.content.map(blockText).join('\n')
 }
 
 export function countWriting(doc: WritingDocument, language: Language) {
@@ -94,6 +119,7 @@ export const workSchema = z.object({
   aiGoal: z.string().max(4000),
   outline: z.string().max(12000),
   title: z.string().max(240),
+  revisionTitle: z.string().max(240).optional(),
   draft: documentSchema,
   revision: documentSchema,
   reflection: z.string().max(8000),
@@ -114,13 +140,23 @@ export const emptyWork: Work = {
 export const saveInput = z.object({
   version: z.number().int().min(0),
   stage: z.enum(stages),
-  action: z.enum(['save', 'advance', 'submit', 'reviseAgain']),
+  action: z.enum(['save', 'advance', 'submit', 'reviseAgain', 'navigate']),
+  target: z.enum(stages).optional(),
   changes: workSchema.partial(),
 })
+
+export const annotationInput = z.object({
+  block: z.number().int().min(0).max(1999),
+  criterion: z.number().int().min(0).max(11).optional(),
+  text: z.string().trim().min(1).max(2000),
+})
+export type Annotation = z.infer<typeof annotationInput>
 
 export const gradeInput = z.object({
   scores: z.array(z.number().int().min(0).max(100)).min(1).max(12),
   feedback: z.string().trim().min(1).max(10000),
+  criteriaFeedback: z.array(z.string().trim().max(2000)).max(12).optional(),
+  annotations: z.array(annotationInput).max(100).optional(),
 })
 export type GradeInput = z.infer<typeof gradeInput>
 
@@ -145,29 +181,41 @@ export const decisionSchema = z.object({
 })
 export type Decision = z.infer<typeof decisionSchema>
 
+export const roles = ['student', 'teacher', 'admin'] as const
+export type Role = (typeof roles)[number]
+
 export interface Identity {
   id: string
   name: string
-  role: 'teacher' | 'student'
+  role: Role
+  email: string
+  image: string | null
+  submissionNotifications: boolean
 }
 export interface Classroom {
   id: string
   name: string
   joinCode?: string
+  studentCount?: number
+  archived?: boolean
 }
 export interface Assignment extends AssignmentInput {
   id: string
   classroomId: string
   classroomName: string
+  archived: boolean
+  updatedAt: string | null
 }
 export interface Submission {
   id: string
   stage: Stage
+  openedStage: Stage
   status: 'draft' | 'submitted' | 'graded'
   version: number
   work: Work
   grade: GradeInput | null
   submittedAt: string | null
+  requirements: AssignmentInput | null
 }
 export interface SubmissionSummary {
   id: string
@@ -182,8 +230,30 @@ export interface AiReview {
   result: AiResult
   decisions: Record<string, Decision>
   createdAt: string
+  source: ReviewSource | null
+}
+export interface ReviewSource {
+  version: number
+  text: string
+  block?: number
+}
+
+export const notificationKinds = [
+  'grade',
+  'assignmentChanged',
+  'submission',
+] as const
+export interface Notification {
+  id: string
+  kind: (typeof notificationKinds)[number]
+  assignmentId: string
+  assignmentTitle: string
+  submissionId: string | null
+  createdAt: string
+  readAt: string | null
 }
 export type AssignmentListItem = Assignment & {
   status: Submission['status'] | null
   stage: Stage | null
+  pendingSubmissions?: number
 }

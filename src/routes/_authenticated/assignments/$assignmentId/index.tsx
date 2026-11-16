@@ -9,6 +9,11 @@ export const Route = createFileRoute(
     request<AssignmentDetail>(`/api/assignments/${params.assignmentId}`),
   gcTime: 0,
   component: function AssignmentRoute() {
-    return <AssignmentPage detail={Route.useLoaderData()} />
+    return (
+      <AssignmentPage
+        detail={Route.useLoaderData()}
+        person={Route.useRouteContext().person}
+      />
+    )
   },
 })

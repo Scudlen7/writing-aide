@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type {
   AssignmentInput,
+  Assignment,
   Classroom,
   Identity,
   Language,
@@ -23,22 +24,32 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Main } from '@/components/layout/main'
-import { RequestError, request, type DashboardData } from './api'
+import { dashboardKey, dashboardOptions, RequestError, request } from './api'
 import { Deadline, Field, PaperLanguage, Problem, StatusBadge } from './ui'
 
-const dashboardKey = ['writing-dashboard']
 const selectClass =
   'h-9 w-full rounded-md border border-input bg-background px-3 text-sm'
 
-export function WritingDashboard({ person }: { person: Identity }) {
+export function WritingDashboard({
+  person,
+  classesOnly = false,
+}: {
+  person: Identity
+  classesOnly?: boolean
+}) {
   const { t } = useTranslation()
   const [now] = useState(Date.now)
+  const [classSearch, setClassSearch] = useState('')
   const teacher = person.role === 'teacher'
-  const data = useQuery({
-    queryKey: [...dashboardKey, person.id],
-    queryFn: () => request<DashboardData>('/api/dashboard'),
-    staleTime: 0,
-  })
+  const data = useQuery(dashboardOptions(person.id))
+  const activeClasses =
+    data.data?.classes.filter((item) => !item.archived) ?? []
+  const visibleClasses =
+    data.data?.classes.filter((item) =>
+      item.name
+        .toLocaleLowerCase()
+        .includes(classSearch.trim().toLocaleLowerCase())
+    ) ?? []
 
   return (
     <Main
@@ -49,14 +60,23 @@ export function WritingDashboard({ person }: { person: Identity }) {
       <section className='flex flex-wrap items-end justify-between gap-4 border-b pb-6'>
         <div>
           <h1 className='text-3xl font-semibold tracking-tight'>
-            {t(teacher ? 'assignments' : 'yourAssignments')}
+            {t(
+              classesOnly
+                ? 'classManagement'
+                : teacher
+                  ? 'assignments'
+                  : 'yourAssignments'
+            )}
           </h1>
-          <p className='mt-2 text-sm text-muted-foreground'>
-            {t(teacher ? 'teacherIntro' : 'studentIntro')}
-          </p>
+          {!classesOnly && (
+            <p className='mt-2 text-sm text-muted-foreground'>
+              {t(teacher ? 'teacherIntro' : 'studentIntro')}
+            </p>
+          )}
         </div>
-        {teacher && data.data && data.data.classes.length > 0 && (
-          <AssignmentDialog classes={data.data.classes} />
+        {classesOnly && data.isSuccess && <ClassDialog teacher />}
+        {!classesOnly && teacher && activeClasses.length > 0 && (
+          <AssignmentDialog classes={activeClasses} />
         )}
       </section>
       {data.isPending && <p role='status'>{t('loading')}</p>}
@@ -68,87 +88,113 @@ export function WritingDashboard({ person }: { person: Identity }) {
           </Button>
         </div>
       )}
-      {data.data && (
+      {data.isSuccess && (
         <>
-          <section aria-label={t(teacher ? 'assignments' : 'yourAssignments')}>
-            {data.data.assignments.length ? (
-              <ul className='grid gap-3'>
-                {data.data.assignments.map((item) => (
-                  <li key={item.id}>
-                    <Card className='gap-0 py-4 shadow-none'>
-                      <CardContent className='flex flex-wrap items-center justify-between gap-4 px-4 sm:px-5'>
-                        <div className='min-w-0 space-y-2'>
-                          <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
-                            <p className='font-semibold wrap-break-word'>
-                              {item.title}
-                            </p>
-                            <PaperLanguage language={item.language} />
-                            {!teacher && (
-                              <StatusBadge
-                                status={item.status}
-                                dueAt={item.dueAt}
-                              />
-                            )}
-                          </div>
-                          <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground'>
-                            <span className='wrap-break-word'>
-                              {item.classroomName}
-                            </span>
-                            <Deadline dueAt={item.dueAt} />
-                            {!teacher &&
-                              item.stage &&
-                              item.status === 'draft' && (
-                                <span>{t(`stage.${item.stage}`)}</span>
+          {!classesOnly && (
+            <section
+              aria-label={t(teacher ? 'assignments' : 'yourAssignments')}
+            >
+              {data.data.assignments.length ? (
+                <ul className='grid gap-3'>
+                  {data.data.assignments.map((item) => (
+                    <li key={item.id}>
+                      <Card className='gap-0 py-4 shadow-none'>
+                        <CardContent className='flex flex-wrap items-center justify-between gap-4 px-4 sm:px-5'>
+                          <div className='min-w-0 space-y-2'>
+                            <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
+                              <p className='font-semibold wrap-break-word'>
+                                {item.title}
+                              </p>
+                              <PaperLanguage language={item.language} />
+                              {item.archived && (
+                                <span className='text-xs text-muted-foreground'>
+                                  {t('archived')}
+                                </span>
                               )}
+                              {!teacher && (
+                                <StatusBadge
+                                  status={item.status}
+                                  dueAt={item.dueAt}
+                                />
+                              )}
+                            </div>
+                            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground'>
+                              <span className='wrap-break-word'>
+                                {item.classroomName}
+                              </span>
+                              <Deadline dueAt={item.dueAt} />
+                              {!teacher &&
+                                item.stage &&
+                                item.status === 'draft' && (
+                                  <span>{t(`stage.${item.stage}`)}</span>
+                                )}
+                            </div>
                           </div>
-                        </div>
-                        <Button variant='outline' size='sm' asChild>
-                          <Link
-                            to='/assignments/$assignmentId'
-                            params={{ assignmentId: item.id }}
-                          >
-                            {t(
-                              teacher ||
-                                item.status === 'graded' ||
-                                item.status === 'submitted' ||
-                                new Date(item.dueAt).getTime() <= now
-                                ? 'openAssignment'
-                                : item.status === 'draft'
-                                  ? 'continueWriting'
-                                  : 'startWriting'
-                            )}
-                            <ArrowRight />
-                          </Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className='rounded-xl border border-dashed p-5 text-sm text-muted-foreground'>
-                {t(teacher ? 'noTeacherAssignments' : 'noStudentAssignments')}
-              </p>
-            )}
-          </section>
-          <section aria-labelledby='class-list'>
-            <div className='mb-3 flex flex-wrap items-center justify-between gap-3'>
-              <div className='flex items-center gap-2'>
-                <GraduationCap size={19} className='text-muted-foreground' />
-                <h2 id='class-list' className='font-semibold'>
-                  {t('classes')}
-                </h2>
+                          <Button variant='outline' size='sm' asChild>
+                            <Link
+                              to='/assignments/$assignmentId'
+                              params={{ assignmentId: item.id }}
+                            >
+                              {t(
+                                teacher ||
+                                  item.archived ||
+                                  item.status === 'graded' ||
+                                  item.status === 'submitted' ||
+                                  new Date(item.dueAt).getTime() <= now
+                                  ? 'openAssignment'
+                                  : item.status === 'draft'
+                                    ? 'continueWriting'
+                                    : 'startWriting'
+                              )}
+                              <ArrowRight />
+                            </Link>
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className='rounded-xl border border-dashed p-5 text-sm text-muted-foreground'>
+                  {t(teacher ? 'noTeacherAssignments' : 'noStudentAssignments')}
+                </p>
+              )}
+            </section>
+          )}
+          <section aria-label={t('classes')}>
+            {!classesOnly && (
+              <div className='mb-3 flex flex-wrap items-center justify-between gap-3'>
+                <div className='flex items-center gap-2'>
+                  <GraduationCap size={19} className='text-muted-foreground' />
+                  <h2 className='font-semibold'>{t('classes')}</h2>
+                </div>
+                <ClassDialog teacher={teacher} />
               </div>
-              <ClassDialog teacher={teacher} />
-            </div>
-            {data.data.classes.length ? (
+            )}
+            {teacher && data.data.classes.length > 0 && (
+              <Input
+                className='mb-3 max-w-sm'
+                type='search'
+                aria-label={t('searchClasses')}
+                placeholder={t('searchClasses')}
+                value={classSearch}
+                onChange={(event) => setClassSearch(event.target.value)}
+              />
+            )}
+            {visibleClasses.length ? (
               <ul className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
-                {data.data.classes.map((item) => (
+                {visibleClasses.map((item) => (
                   <li
                     key={item.id}
                     className='min-w-0 rounded-xl border bg-card p-4'
                   >
                     <p className='font-medium wrap-break-word'>{item.name}</p>
+                    {teacher && (
+                      <p className='mt-1 text-sm text-muted-foreground'>
+                        {t('studentCount', { count: item.studentCount ?? 0 })}
+                        {item.archived && ` · ${t('archived')}`}
+                      </p>
+                    )}
                     {item.joinCode && (
                       <div className='mt-2 flex flex-wrap items-center justify-between gap-2'>
                         <div>
@@ -174,12 +220,34 @@ export function WritingDashboard({ person }: { person: Identity }) {
                         </Button>
                       </div>
                     )}
+                    {teacher && (
+                      <Button
+                        asChild
+                        variant='outline'
+                        size='sm'
+                        className='mt-3'
+                      >
+                        <Link
+                          to='/classes/$classId'
+                          params={{ classId: item.id }}
+                        >
+                          {t('classDetails')}
+                          <ArrowRight />
+                        </Link>
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
             ) : (
               <p className='rounded-xl border border-dashed p-5 text-sm text-muted-foreground'>
-                {t(teacher ? 'noTeacherClasses' : 'noStudentClasses')}
+                {t(
+                  classSearch
+                    ? 'noMatches'
+                    : teacher
+                      ? 'noTeacherClasses'
+                      : 'noStudentClasses'
+                )}
               </p>
             )}
           </section>
@@ -258,10 +326,29 @@ function ClassDialog({ teacher }: { teacher: boolean }) {
   )
 }
 
-function AssignmentDialog({ classes }: { classes: Classroom[] }) {
+export function AssignmentDialog({
+  classes,
+  initial,
+  mode = 'create',
+  frozen = false,
+  onSaved,
+}: {
+  classes: Classroom[]
+  initial?: Assignment
+  mode?: 'create' | 'copy' | 'edit'
+  frozen?: boolean
+  onSaved?: () => void | Promise<void>
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const label = t(
+    mode === 'edit'
+      ? 'editAssignment'
+      : mode === 'copy'
+        ? 'copyAssignment'
+        : 'newAssignment'
+  )
   return (
     <Dialog
       open={open}
@@ -270,9 +357,10 @@ function AssignmentDialog({ classes }: { classes: Classroom[] }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button>
-          <Plus />
-          {t('newAssignment')}
+        <Button variant={mode === 'create' ? 'default' : 'outline'}>
+          {mode === 'create' && <Plus />}
+          {mode === 'copy' && <Copy />}
+          {label}
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -281,12 +369,19 @@ function AssignmentDialog({ classes }: { classes: Classroom[] }) {
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle>{t('newAssignment')}</DialogTitle>
+          <DialogTitle>{label}</DialogTitle>
         </DialogHeader>
         <AssignmentForm
           classes={classes}
           pending={pending}
           setPending={setPending}
+          initial={initial}
+          mode={mode}
+          frozen={frozen}
+          onSaved={async () => {
+            setOpen(false)
+            await onSaved?.()
+          }}
         />
       </DialogContent>
     </Dialog>
@@ -297,21 +392,40 @@ function AssignmentForm({
   classes,
   pending,
   setPending,
+  initial,
+  mode,
+  frozen,
+  onSaved,
 }: {
   classes: Classroom[]
   pending: boolean
   setPending: (pending: boolean) => void
+  initial?: Assignment
+  mode: 'create' | 'copy' | 'edit'
+  frozen: boolean
+  onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const client = useQueryClient()
   const [error, setError] = useState<unknown>(null)
-  const [language, setLanguage] = useState<Language>('zh-CN')
-  const [rubric, setRubric] = useState<AssignmentInput['rubric']>(() =>
-    (
-      ['contentCriterion', 'structureCriterion', 'languageCriterion'] as const
-    ).map((key) => ({ label: t(key), max: 10, description: '' }))
+  const [language, setLanguage] = useState<Language>(
+    initial?.language ?? 'zh-CN'
   )
+  const [rubric, setRubric] = useState<AssignmentInput['rubric']>(
+    () =>
+      initial?.rubric ??
+      (
+        ['contentCriterion', 'structureCriterion', 'languageCriterion'] as const
+      ).map((key) => ({ label: t(key), max: 10, description: '' }))
+  )
+  const editing = mode === 'edit' && initial
+  const due = editing ? new Date(initial.dueAt) : null
+  const localDue = due
+    ? new Date(due.valueOf() - due.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16)
+    : ''
 
   function updateCriterion(
     index: number,
@@ -330,32 +444,49 @@ function AssignmentForm({
     setError(null)
     setPending(true)
     try {
-      const deadline = new Date(String(values.get('dueAt')))
+      const enteredDue = String(values.get('dueAt'))
+      const deadline =
+        due && enteredDue === localDue ? due : new Date(enteredDue)
       if (
         !Number.isFinite(deadline.getTime()) ||
-        deadline.getTime() <= Date.now()
+        (deadline !== due && deadline.getTime() <= Date.now())
       ) {
         throw new RequestError(400, 'invalidDeadline')
       }
-      const result = await request<{ id: string }>('/api/assignments', 'POST', {
-        classroomId: values.get('classroomId'),
-        title: values.get('title'),
-        instructions: values.get('instructions'),
-        dueAt: deadline.toISOString(),
-        language,
-        minLength: Number(values.get('minLength')),
-        maxLength: Number(values.get('maxLength')),
-        checklist: String(values.get('checklist'))
-          .split(/\r?\n/)
-          .map((item) => item.trim())
-          .filter(Boolean),
-        rubric,
-      })
+      const result = await request<{ id: string }>(
+        editing ? `/api/assignments/${initial.id}` : '/api/assignments',
+        editing ? 'PATCH' : 'POST',
+        {
+          classroomId: editing
+            ? initial.classroomId
+            : values.get('classroomId'),
+          title: values.get('title'),
+          instructions: values.get('instructions'),
+          dueAt: deadline.toISOString(),
+          language,
+          minLength: frozen
+            ? initial?.minLength
+            : Number(values.get('minLength')),
+          maxLength: frozen
+            ? initial?.maxLength
+            : Number(values.get('maxLength')),
+          checklist: frozen
+            ? initial?.checklist
+            : String(values.get('checklist'))
+                .split(/\r?\n/)
+                .map((item) => item.trim())
+                .filter(Boolean),
+          rubric,
+        }
+      )
       await client.invalidateQueries({ queryKey: dashboardKey })
-      await navigate({
-        to: '/assignments/$assignmentId',
-        params: { assignmentId: result.id },
-      })
+      toast.success(t(editing ? 'saved' : 'assignmentPublished'))
+      await onSaved()
+      if (!editing)
+        await navigate({
+          to: '/assignments/$assignmentId',
+          params: { assignmentId: result.id },
+        })
     } catch (cause) {
       setError(cause)
     } finally {
@@ -366,15 +497,34 @@ function AssignmentForm({
   return (
     <form className='grid gap-4' onSubmit={(event) => void submit(event)}>
       <Field label={t('assignmentTitle')}>
-        <Input name='title' maxLength={160} required />
+        <Input
+          name='title'
+          maxLength={160}
+          required
+          defaultValue={initial?.title}
+        />
       </Field>
       <div className='grid gap-3 sm:grid-cols-2'>
         <Field label={t('classroom')}>
           <select
             name='classroomId'
+            disabled={Boolean(editing)}
+            required
+            defaultValue={
+              editing
+                ? initial.classroomId
+                : mode === 'copy'
+                  ? ''
+                  : classes[0]?.id
+            }
             aria-label={t('classroom')}
             className={selectClass}
           >
+            {mode === 'copy' && (
+              <option value='' disabled>
+                {t('chooseClass')}
+              </option>
+            )}
             {classes.map((item) => (
               <option value={item.id} key={item.id}>
                 {item.name}
@@ -387,6 +537,7 @@ function AssignmentForm({
             aria-label={t('writingLanguage')}
             className={selectClass}
             value={language}
+            disabled={frozen}
             onChange={(event) => setLanguage(event.target.value as Language)}
           >
             <option value='zh-CN'>{t('chinese')}</option>
@@ -395,104 +546,127 @@ function AssignmentForm({
         </Field>
       </div>
       <Field label={t('due')}>
-        <Input name='dueAt' type='datetime-local' required />
-      </Field>
-      <Field label={t('instructions')}>
-        <Textarea name='instructions' rows={4} maxLength={10000} required />
-      </Field>
-      <div className='grid gap-3 sm:grid-cols-2'>
-        {(['minLength', 'maxLength'] as const).map((key, index) => (
-          <Field
-            key={key}
-            label={`${t(key)} (${t(language === 'en' ? 'words' : 'characters')})`}
-          >
-            <Input
-              name={key}
-              type='number'
-              min={1}
-              max={30000}
-              defaultValue={index ? 1200 : 200}
-              required
-            />
-          </Field>
-        ))}
-      </div>
-      <Field label={t('checklist')}>
-        <Textarea
-          name='checklist'
-          placeholder={t('checklistHint')}
-          rows={2}
-          maxLength={3012}
+        <Input
+          name='dueAt'
+          type='datetime-local'
+          required
+          defaultValue={localDue}
         />
       </Field>
-      <fieldset className='grid gap-3 rounded-xl border p-3'>
-        <legend className='px-1 text-sm font-semibold'>{t('rubric')}</legend>
-        {rubric.map((item, index) => (
-          <div key={index} className='grid gap-2 rounded-md bg-muted/45 p-3'>
-            <div className='grid grid-cols-[minmax(0,1fr)_6rem_auto] items-end gap-2'>
-              <Field label={t('criterion')}>
-                <Input
-                  required
-                  value={item.label}
-                  maxLength={80}
-                  onChange={(event) =>
-                    updateCriterion(index, { label: event.target.value })
-                  }
-                />
-              </Field>
-              <Field label={t('maxScore')}>
-                <Input
-                  required
-                  type='number'
-                  min={1}
-                  max={100}
-                  value={item.max || ''}
-                  onChange={(event) =>
-                    updateCriterion(index, { max: Number(event.target.value) })
-                  }
-                />
-              </Field>
-              <Button
-                size='sm'
-                type='button'
-                variant='ghost'
-                disabled={rubric.length === 1}
-                onClick={() =>
-                  setRubric(rubric.filter((_, position) => position !== index))
-                }
-              >
-                {t('remove')}
-              </Button>
-            </div>
-            <Field label={t('criterionDescription')}>
-              <Textarea
-                rows={2}
-                value={item.description}
-                maxLength={1000}
-                onChange={(event) =>
-                  updateCriterion(index, { description: event.target.value })
-                }
+      <Field label={t('instructions')}>
+        <Textarea
+          name='instructions'
+          rows={4}
+          maxLength={10000}
+          required
+          defaultValue={initial?.instructions}
+        />
+      </Field>
+      {frozen && (
+        <p className='text-sm text-muted-foreground'>
+          {t('error.assignmentFieldsFrozen')}
+        </p>
+      )}
+      <fieldset disabled={frozen} className='grid gap-4'>
+        <div className='grid gap-3 sm:grid-cols-2'>
+          {(['minLength', 'maxLength'] as const).map((key, index) => (
+            <Field
+              key={key}
+              label={`${t(key)} (${t(language === 'en' ? 'words' : 'characters')})`}
+            >
+              <Input
+                name={key}
+                type='number'
+                min={1}
+                max={30000}
+                defaultValue={initial?.[key] ?? (index ? 1200 : 200)}
+                required
               />
             </Field>
-          </div>
-        ))}
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          disabled={rubric.length >= 12}
-          className='justify-self-start'
-          onClick={() =>
-            setRubric([...rubric, { label: '', max: 10, description: '' }])
-          }
-        >
-          <Plus />
-          {t('addCriterion')}
-        </Button>
+          ))}
+        </div>
+        <Field label={t('checklist')}>
+          <Textarea
+            name='checklist'
+            placeholder={t('checklistHint')}
+            rows={2}
+            maxLength={3012}
+            defaultValue={initial?.checklist.join('\n')}
+          />
+        </Field>
+        <fieldset className='grid gap-3 rounded-xl border p-3'>
+          <legend className='px-1 text-sm font-semibold'>{t('rubric')}</legend>
+          {rubric.map((item, index) => (
+            <div key={index} className='grid gap-2 rounded-md bg-muted/45 p-3'>
+              <div className='grid grid-cols-[minmax(0,1fr)_6rem_auto] items-end gap-2'>
+                <Field label={t('criterion')}>
+                  <Input
+                    required
+                    value={item.label}
+                    maxLength={80}
+                    onChange={(event) =>
+                      updateCriterion(index, { label: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('maxScore')}>
+                  <Input
+                    required
+                    type='number'
+                    min={1}
+                    max={100}
+                    value={item.max || ''}
+                    onChange={(event) =>
+                      updateCriterion(index, {
+                        max: Number(event.target.value),
+                      })
+                    }
+                  />
+                </Field>
+                <Button
+                  size='sm'
+                  type='button'
+                  variant='ghost'
+                  disabled={rubric.length === 1}
+                  onClick={() =>
+                    setRubric(
+                      rubric.filter((_, position) => position !== index)
+                    )
+                  }
+                >
+                  {t('remove')}
+                </Button>
+              </div>
+              <Field label={t('criterionDescription')}>
+                <Textarea
+                  rows={2}
+                  value={item.description}
+                  maxLength={1000}
+                  onChange={(event) =>
+                    updateCriterion(index, { description: event.target.value })
+                  }
+                />
+              </Field>
+            </div>
+          ))}
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            disabled={rubric.length >= 12}
+            className='justify-self-start'
+            onClick={() =>
+              setRubric([...rubric, { label: '', max: 10, description: '' }])
+            }
+          >
+            <Plus />
+            {t('addCriterion')}
+          </Button>
+        </fieldset>
       </fieldset>
       <Problem error={error} />
       <Button disabled={pending} type='submit'>
-        {t(pending ? 'saving' : 'publish')}
+        {t(pending ? 'saving' : editing ? 'saveChanges' : 'publish')}
       </Button>
     </form>
   )

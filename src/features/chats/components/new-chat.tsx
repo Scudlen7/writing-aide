@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Check, X } from 'lucide-react'
-import { showSubmittedData } from '@/lib/show-submitted-data'
-import { Badge } from '@/components/ui/badge'
+import { useQuery } from '@tanstack/react-query'
+import type { ChatContact } from '@writing/chat'
+import { PenLine } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -16,111 +16,102 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog'
-import { type ChatUser } from '../data/chat-types'
+import { request } from '@/features/writing/api'
+import { Problem } from '@/features/writing/ui'
 
-type User = Omit<ChatUser, 'messages'>
-
-type NewChatProps = {
-  users: User[]
+export function NewChat({
+  personId,
+  open,
+  onOpenChange,
+  onSelect,
+}: {
+  personId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-export function NewChat({ users, onOpenChange, open }: NewChatProps) {
-  const [selectedUsers, setSelectedUsers] = useState<User[]>([])
-
-  const handleSelectUser = (user: User) => {
-    if (!selectedUsers.find((u) => u.id === user.id)) {
-      setSelectedUsers([...selectedUsers, user])
-    } else {
-      handleRemoveUser(user.id)
-    }
-  }
-
-  const handleRemoveUser = (userId: string) => {
-    setSelectedUsers(selectedUsers.filter((user) => user.id !== userId))
-  }
-
-  const handleOpenChange = (newOpen: boolean) => {
-    onOpenChange(newOpen)
-    // Reset selected users when dialog closes
-    if (!newOpen) {
-      setSelectedUsers([])
-    }
-  }
-
+  onSelect: (contact: ChatContact) => void
+}) {
+  const { t } = useTranslation()
+  const contacts = useQuery({
+    queryKey: ['writing-chat-contacts', personId],
+    queryFn: () => request<ChatContact[]>('/api/chats/contacts'),
+    enabled: open,
+    refetchOnWindowFocus: 'always',
+  })
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className='sm:max-w-150'>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button
+          variant='ghost'
+          size='icon'
+          aria-label={t('newChat')}
+          title={t('newChat')}
+        >
+          <PenLine />
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        closeLabel={t('close')}
+        aria-describedby={undefined}
+        className='sm:max-w-lg'
+      >
         <DialogHeader>
-          <DialogTitle>New message</DialogTitle>
+          <DialogTitle>{t('newChat')}</DialogTitle>
         </DialogHeader>
-        <div className='flex flex-col gap-4'>
-          <div className='flex flex-wrap items-baseline-last gap-2'>
-            <span className='min-h-6 text-sm text-muted-foreground'>To:</span>
-            {selectedUsers.map((user) => (
-              <Badge key={user.id} variant='default'>
-                {user.fullName}
-                <button
-                  className='ms-1 rounded-full ring-offset-background outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2'
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleRemoveUser(user.id)
-                    }
-                  }}
-                  onClick={() => handleRemoveUser(user.id)}
-                >
-                  <X className='h-3 w-3 text-muted-foreground hover:text-foreground' />
-                </button>
-              </Badge>
-            ))}
-          </div>
-          <Command className='rounded-lg border'>
-            <CommandInput
-              placeholder='Search people...'
-              className='text-foreground'
-            />
-            <CommandList>
-              <CommandEmpty>No people found.</CommandEmpty>
-              <CommandGroup>
-                {users.map((user) => (
-                  <CommandItem
-                    key={user.id}
-                    onSelect={() => handleSelectUser(user)}
-                    className='flex items-center justify-between gap-2 hover:bg-accent hover:text-accent-foreground'
-                  >
-                    <div className='flex items-center gap-2'>
-                      <img
-                        src={user.profile || '/placeholder.svg'}
-                        alt={user.fullName}
-                        className='h-8 w-8 rounded-full'
-                      />
-                      <div className='flex flex-col'>
-                        <span className='text-sm font-medium'>
-                          {user.fullName}
-                        </span>
-                        <span className='text-xs text-accent-foreground/70'>
-                          {user.username}
-                        </span>
+        {contacts.isPending && (
+          <p role='status' className='text-sm text-muted-foreground'>
+            {t('loading')}
+          </p>
+        )}
+        {contacts.isError && (
+          <>
+            <Problem error={contacts.error} />
+            <Button variant='outline' onClick={() => void contacts.refetch()}>
+              {t('retry')}
+            </Button>
+          </>
+        )}
+        {contacts.isSuccess &&
+          (contacts.data.length ? (
+            <Command className='rounded-md border'>
+              <CommandInput
+                placeholder={t('searchContacts')}
+                aria-label={t('searchContacts')}
+              />
+              <CommandList>
+                <CommandEmpty>{t('noMatches')}</CommandEmpty>
+                <CommandGroup>
+                  {contacts.data.map((contact) => (
+                    <CommandItem
+                      key={contact.id}
+                      value={contact.id}
+                      keywords={[
+                        contact.name,
+                        t(contact.role),
+                        ...contact.classrooms,
+                      ]}
+                      onSelect={() => onSelect(contact)}
+                      className='items-start gap-2'
+                    >
+                      <div className='min-w-0 space-y-0.5'>
+                        <p className='font-medium wrap-break-word'>
+                          {contact.name}
+                        </p>
+                        <p className='text-xs wrap-break-word text-muted-foreground'>
+                          {t(contact.role)} · {contact.classrooms.join(' · ')}
+                        </p>
                       </div>
-                    </div>
-
-                    {selectedUsers.find((u) => u.id === user.id) && (
-                      <Check className='h-4 w-4' />
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-          <Button
-            variant={'default'}
-            onClick={() => showSubmittedData(selectedUsers)}
-            disabled={selectedUsers.length === 0}
-          >
-            Chat
-          </Button>
-        </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          ) : (
+            <p className='text-sm text-muted-foreground'>
+              {t('noChatContacts')}
+            </p>
+          ))}
       </DialogContent>
     </Dialog>
   )

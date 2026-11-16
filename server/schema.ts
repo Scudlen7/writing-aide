@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm'
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -10,14 +12,17 @@ import {
   uuid,
   boolean,
 } from 'drizzle-orm/pg-core'
-import type {
-  AiResult,
-  AiTask,
-  AssignmentInput,
-  Decision,
-  GradeInput,
-  Stage,
-  Work,
+import {
+  notificationKinds,
+  roles,
+  type AiResult,
+  type AiTask,
+  type AssignmentInput,
+  type Decision,
+  type GradeInput,
+  type ReviewSource,
+  type Stage,
+  type Work,
 } from '../shared/writing.ts'
 
 const date = (name: string) => timestamp(name, { withTimezone: true })
@@ -28,9 +33,11 @@ export const user = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
-  role: text('role', { enum: ['student', 'teacher'] })
+  role: text('role', { enum: roles }).notNull().default('student'),
+  disabled: boolean('disabled').notNull().default(false),
+  submissionNotifications: boolean('submission_notifications')
     .notNull()
-    .default('student'),
+    .default(false),
   createdAt: date('created_at').notNull().defaultNow(),
   updatedAt: date('updated_at').notNull().defaultNow(),
 })
@@ -96,6 +103,7 @@ export const classroom = pgTable(
       .notNull()
       .references(() => user.id),
     joinCode: text('join_code').notNull().unique(),
+    archived: boolean('archived').notNull().default(false),
   },
   (table) => [index().on(table.teacherId)]
 )
@@ -109,6 +117,7 @@ export const enrollment = pgTable(
     studentId: text('student_id')
       .notNull()
       .references(() => user.id),
+    removed: boolean('removed').notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.classroomId, table.studentId] }),
@@ -133,6 +142,8 @@ export const assignment = pgTable(
       .$type<AssignmentInput['checklist']>()
       .notNull(),
     rubric: jsonb('rubric').$type<AssignmentInput['rubric']>().notNull(),
+    archived: boolean('archived').notNull().default(false),
+    updatedAt: date('updated_at'),
   },
   (table) => [index().on(table.classroomId)]
 )
@@ -148,6 +159,7 @@ export const submission = pgTable(
       .notNull()
       .references(() => user.id),
     stage: text('stage').$type<Stage>().notNull().default('goals'),
+    openedStage: text('opened_stage').$type<Stage>().notNull().default('goals'),
     status: text('status', { enum: ['draft', 'submitted', 'graded'] })
       .notNull()
       .default('draft'),
@@ -155,6 +167,7 @@ export const submission = pgTable(
     work: jsonb('work').$type<Work>().notNull(),
     grade: jsonb('grade').$type<GradeInput>(),
     submittedAt: date('submitted_at'),
+    requirements: jsonb('requirements').$type<AssignmentInput>(),
   },
   (table) => [unique().on(table.assignmentId, table.studentId)]
 )
@@ -168,6 +181,7 @@ export const aiReview = pgTable(
       .references(() => submission.id),
     task: text('task').$type<AiTask>().notNull(),
     result: jsonb('result').$type<AiResult>().notNull(),
+    source: jsonb('source').$type<ReviewSource>(),
     decisions: jsonb('decisions')
       .$type<Record<string, Decision>>()
       .notNull()
@@ -175,4 +189,62 @@ export const aiReview = pgTable(
     createdAt: date('created_at').notNull().defaultNow(),
   },
   (table) => [index().on(table.submissionId)]
+)
+
+export const notification = pgTable(
+  'notification',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recipientId: text('recipient_id')
+      .notNull()
+      .references(() => user.id),
+    assignmentId: uuid('assignment_id')
+      .notNull()
+      .references(() => assignment.id),
+    submissionId: uuid('submission_id').references(() => submission.id),
+    kind: text('kind', { enum: notificationKinds }).notNull(),
+    eventKey: text('event_key').notNull(),
+    createdAt: date('created_at').notNull().defaultNow(),
+    readAt: date('read_at'),
+  },
+  (table) => [
+    unique().on(table.recipientId, table.eventKey),
+    index().on(table.recipientId, table.createdAt),
+  ]
+)
+
+export const managementAudit = pgTable('management_audit', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actorId: text('actor_id')
+    .notNull()
+    .references(() => user.id),
+  targetId: text('target_id').notNull(),
+  action: text('action').notNull(),
+  createdAt: date('created_at').notNull().defaultNow(),
+})
+
+export const chatMessage = pgTable(
+  'chat_message',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    senderId: text('sender_id')
+      .notNull()
+      .references(() => user.id),
+    recipientId: text('recipient_id')
+      .notNull()
+      .references(() => user.id),
+    clientId: uuid('client_id').notNull(),
+    body: text('body').notNull(),
+    createdAt: date('created_at').notNull().defaultNow(),
+    readAt: date('read_at'),
+  },
+  (table) => [
+    unique().on(table.senderId, table.clientId),
+    check(
+      'chat_message_distinct_participants',
+      sql`${table.senderId} <> ${table.recipientId}`
+    ),
+    index().on(table.senderId, table.recipientId, table.id),
+    index().on(table.recipientId, table.senderId, table.id),
+  ]
 )

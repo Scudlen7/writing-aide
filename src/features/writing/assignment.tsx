@@ -1,10 +1,12 @@
-import { Link } from '@tanstack/react-router'
-import type { Assignment } from '@writing/writing'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useRouter } from '@tanstack/react-router'
+import type { Assignment, Identity } from '@writing/writing'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Main } from '@/components/layout/main'
-import type { AssignmentDetail } from './api'
+import { dashboardOptions, type AssignmentDetail } from './api'
+import { AssignmentDialog } from './dashboard'
 import { Deadline, PaperLanguage, Requirements, StatusBadge } from './ui'
 import { Workspace } from './workspace'
 
@@ -15,7 +17,7 @@ export function AssignmentHeading({
   assignment: Assignment
   backToAssignment?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return (
     <div className='space-y-3'>
       {backToAssignment ? (
@@ -43,12 +45,29 @@ export function AssignmentHeading({
         <PaperLanguage language={assignment.language} />
         <span className='wrap-break-word'>{assignment.classroomName}</span>
         <Deadline dueAt={assignment.dueAt} />
+        {assignment.archived && <span>{t('archived')}</span>}
+        {assignment.updatedAt && (
+          <time dateTime={assignment.updatedAt}>
+            {t('updatedAt', {
+              date: new Intl.DateTimeFormat(i18n.language, {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              }).format(new Date(assignment.updatedAt)),
+            })}
+          </time>
+        )}
       </div>
     </div>
   )
 }
 
-export function AssignmentPage({ detail }: { detail: AssignmentDetail }) {
+export function AssignmentPage({
+  detail,
+  person,
+}: {
+  detail: AssignmentDetail
+  person: Identity
+}) {
   const { t } = useTranslation()
   const { assignment } = detail
   return (
@@ -58,6 +77,13 @@ export function AssignmentPage({ detail }: { detail: AssignmentDetail }) {
       className='mx-auto w-full max-w-6xl space-y-6 px-4 py-7 sm:px-8'
     >
       <AssignmentHeading assignment={assignment} />
+      {'submissions' in detail && (
+        <AssignmentActions
+          assignment={assignment}
+          started={detail.started}
+          person={person}
+        />
+      )}
       {'submissions' in detail ? (
         <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
           <section className='min-w-0 rounded-xl border bg-card'>
@@ -121,5 +147,35 @@ export function AssignmentPage({ detail }: { detail: AssignmentDetail }) {
         />
       )}
     </Main>
+  )
+}
+
+function AssignmentActions({
+  assignment,
+  started,
+  person,
+}: {
+  assignment: Assignment
+  started: boolean
+  person: Identity
+}) {
+  const router = useRouter()
+  const classes = useQuery(dashboardOptions(person.id))
+  const targets = classes.data?.classes.filter((item) => !item.archived) ?? []
+  return (
+    <div className='flex flex-wrap gap-2'>
+      <AssignmentDialog
+        classes={[
+          { id: assignment.classroomId, name: assignment.classroomName },
+        ]}
+        initial={assignment}
+        mode='edit'
+        frozen={started}
+        onSaved={() => router.invalidate()}
+      />
+      {targets.length > 0 && (
+        <AssignmentDialog classes={targets} initial={assignment} mode='copy' />
+      )}
+    </div>
   )
 }

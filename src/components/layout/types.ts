@@ -16,6 +16,7 @@ type BaseNavItem = {
   title: string
   badge?: string
   icon?: React.ElementType
+  activePrefix?: string
 }
 
 type NavLink = BaseNavItem & {
@@ -25,6 +26,7 @@ type NavLink = BaseNavItem & {
 
 type NavCollapsible = BaseNavItem & {
   items: (BaseNavItem & { url: LinkProps['to'] | (string & {}) })[]
+  emptyLabel?: string
   url?: never
 }
 

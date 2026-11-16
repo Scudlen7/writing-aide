@@ -71,7 +71,11 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         isActive={checkIsActive(href, item)}
         tooltip={item.title}
       >
-        <Link to={item.url} onClick={() => setOpenMobile(false)}>
+        <Link
+          to={item.url}
+          activeOptions={{ exact: true }}
+          onClick={() => setOpenMobile(false)}
+        >
           {item.icon && <item.icon />}
           <span>{item.title}</span>
           {item.badge && <NavBadge>{item.badge}</NavBadge>}
@@ -97,7 +101,11 @@ function SidebarMenuCollapsible({
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton tooltip={item.title}>
+          <SidebarMenuButton
+            aria-label={item.title}
+            tooltip={item.title}
+            isActive={checkIsActive(href, item)}
+          >
             {item.icon && <item.icon />}
             <span>{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
@@ -107,12 +115,17 @@ function SidebarMenuCollapsible({
         <CollapsibleContent className='CollapsibleContent'>
           <SidebarMenuSub>
             {item.items.map((subItem) => (
-              <SidebarMenuSubItem key={subItem.title}>
+              <SidebarMenuSubItem key={subItem.url}>
                 <SidebarMenuSubButton
                   asChild
                   isActive={checkIsActive(href, subItem)}
                 >
-                  <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
+                  <Link
+                    to={subItem.url}
+                    activeOptions={{ exact: true }}
+                    title={subItem.title}
+                    onClick={() => setOpenMobile(false)}
+                  >
                     {subItem.icon && <subItem.icon />}
                     <span>{subItem.title}</span>
                     {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
@@ -120,6 +133,11 @@ function SidebarMenuCollapsible({
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}
+            {!item.items.length && item.emptyLabel && (
+              <SidebarMenuSubItem className='px-2 py-1 text-xs wrap-break-word text-sidebar-foreground/70'>
+                {item.emptyLabel}
+              </SidebarMenuSubItem>
+            )}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -139,6 +157,7 @@ function SidebarMenuCollapsedDropdown({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <SidebarMenuButton
+            aria-label={item.title}
             tooltip={item.title}
             isActive={checkIsActive(href, item)}
           >
@@ -154,9 +173,10 @@ function SidebarMenuCollapsedDropdown({
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {item.items.map((sub) => (
-            <DropdownMenuItem key={`${sub.title}-${sub.url}`} asChild>
+            <DropdownMenuItem key={sub.url} asChild>
               <Link
                 to={sub.url}
+                activeOptions={{ exact: true }}
                 className={`${checkIsActive(href, sub) ? 'bg-secondary' : ''}`}
               >
                 {sub.icon && <sub.icon />}
@@ -167,17 +187,26 @@ function SidebarMenuCollapsedDropdown({
               </Link>
             </DropdownMenuItem>
           ))}
+          {!item.items.length && item.emptyLabel && (
+            <DropdownMenuItem disabled className='max-w-52 whitespace-normal'>
+              {item.emptyLabel}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
   )
 }
 
-function checkIsActive(href: string, item: NavItem, mainNav = false) {
+function checkIsActive(href: string, item: NavItem, mainNav = false): boolean {
+  const pathname = href.split(/[?#]/)[0].replace(/\/$/, '') || '/'
   return (
     href === item.url || // /endpint?search=param
-    href.split('?')[0] === item.url || // endpoint
-    !!item?.items?.filter((i) => i.url === href).length || // if child nav is active
+    pathname === item.url ||
+    Boolean(
+      item.activePrefix && pathname.startsWith(`${item.activePrefix}/`)
+    ) ||
+    Boolean(item.items?.some((child) => checkIsActive(href, child))) ||
     (mainNav &&
       href.split('/')[1] !== '' &&
       href.split('/')[1] === item?.url?.split('/')[1])
