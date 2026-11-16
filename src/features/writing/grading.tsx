@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import type { AiReview, Submission } from '@writing/writing'
+import {
+  blockText,
+  type AiReview,
+  type Annotation,
+  type Submission,
+} from '@writing/writing'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,12 +22,14 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
   const [submission, setSubmission] = useState(detail.submission)
   const [reviews, setReviews] = useState(detail.reviews)
   const [scores, setScores] = useState(() => assignment.rubric.map(() => ''))
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
   async function publish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const feedback = new FormData(event.currentTarget).get('feedback')
+    const form = new FormData(event.currentTarget)
+    const feedback = form.get('feedback')
     setPending(true)
     setError(null)
     try {
@@ -32,6 +39,10 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
         {
           scores: scores.map(Number),
           feedback,
+          criteriaFeedback: assignment.rubric.map((_, index) =>
+            form.get(`feedback-${index}`)
+          ),
+          annotations,
         }
       )
       setSubmission({ ...result, studentName: submission.studentName })
@@ -67,10 +78,11 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
       </div>
       <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)]'>
         <div className='space-y-3'>
-          <WrittenWork work={submission.work} />
+          <WrittenWork work={submission.work} anchors />
           <Requirements assignment={assignment} />
           <ReviewPanel
             reviews={reviews.filter((item) => item.task !== 'assessment')}
+            work={submission.work}
           />
         </div>
         <div className='min-w-0 space-y-3'>
@@ -117,8 +129,23 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
                         }}
                       />
                     </Field>
+                    <div className='col-span-full'>
+                      <Field label={t('criterionFeedback')}>
+                        <Textarea
+                          name={`feedback-${index}`}
+                          rows={2}
+                          maxLength={2000}
+                        />
+                      </Field>
+                    </div>
                   </div>
                 ))}
+                <AnnotationsEditor
+                  work={submission.work}
+                  rubric={assignment.rubric}
+                  notes={annotations}
+                  onChange={setAnnotations}
+                />
                 <Field label={t('feedback')}>
                   <Textarea
                     name='feedback'
@@ -152,5 +179,117 @@ export function GradingPage({ detail }: { detail: GradingDetail }) {
         </div>
       </div>
     </Main>
+  )
+}
+
+function AnnotationsEditor({
+  work,
+  rubric,
+  notes,
+  onChange,
+}: {
+  work: Submission['work']
+  rubric: GradingDetail['assignment']['rubric']
+  notes: Annotation[]
+  onChange: (notes: Annotation[]) => void
+}) {
+  const { t } = useTranslation()
+  const paragraphs = work.revision.content.flatMap((item, block) => {
+    const text = blockText(item).trim()
+    return item.type === 'paragraph' && text ? [{ block, text }] : []
+  })
+  const [block, selectBlock] = useState(paragraphs[0]?.block ?? 0)
+  const [criterion, selectCriterion] = useState('')
+  const [text, setText] = useState('')
+  if (paragraphs.length === 0) return null
+  return (
+    <fieldset className='grid gap-3 rounded-lg border p-3'>
+      <legend className='px-1 text-sm font-medium'>{t('annotations')}</legend>
+      {notes.map((note, index) => (
+        <div className='grid gap-1 rounded border p-2 text-sm' key={index}>
+          <a
+            className='font-medium text-primary underline'
+            href={`#paper-paragraph-${note.block}`}
+          >
+            {t('paragraphNumber', { number: note.block + 1 })}
+          </a>
+          {note.criterion !== undefined && (
+            <p>{rubric[note.criterion].label}</p>
+          )}
+          <p className='wrap-break-word whitespace-pre-wrap'>{note.text}</p>
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            className='justify-self-start'
+            onClick={() => onChange(notes.filter((_, item) => item !== index))}
+          >
+            {t('remove')}
+          </Button>
+        </div>
+      ))}
+      <Field label={t('targetParagraph')}>
+        <select
+          className='h-9 w-full rounded-md border border-input bg-background px-2'
+          value={block}
+          onChange={(event) => selectBlock(Number(event.target.value))}
+        >
+          {paragraphs.map((item) => (
+            <option key={item.block} value={item.block}>
+              {t('paragraphNumber', { number: item.block + 1 })} ·{' '}
+              {item.text.slice(0, 80)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <a
+        href={`#paper-paragraph-${block}`}
+        className='text-xs text-primary underline'
+      >
+        {t('locateParagraph')}
+      </a>
+      <Field label={t('linkedCriterion')}>
+        <select
+          className='h-9 w-full rounded-md border border-input bg-background px-2'
+          value={criterion}
+          onChange={(event) => selectCriterion(event.target.value)}
+        >
+          <option value=''>{t('noCriterion')}</option>
+          {rubric.map((item, index) => (
+            <option key={index} value={index}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label={t('annotationText')}>
+        <Textarea
+          rows={2}
+          value={text}
+          maxLength={2000}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </Field>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        className='justify-self-start'
+        disabled={!text.trim() || notes.length >= 100}
+        onClick={() => {
+          onChange([
+            ...notes,
+            {
+              block,
+              criterion: criterion === '' ? undefined : Number(criterion),
+              text: text.trim(),
+            },
+          ])
+          setText('')
+        }}
+      >
+        {t('addAnnotation')}
+      </Button>
+    </fieldset>
   )
 }

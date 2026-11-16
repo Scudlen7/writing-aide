@@ -21,7 +21,8 @@
     "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
-    "teacher:create": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/create-teacher.ts"
+    "teacher:create": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/create-teacher.ts",
+    "admin:create": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/create-admin.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.25",

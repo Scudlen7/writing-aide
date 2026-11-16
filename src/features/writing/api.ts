@@ -36,13 +36,17 @@ export async function request<T>(
 }
 
 export const session = () => request<Identity>('/api/me')
+export const identityKey = (id: string) => ['writing-identity', id]
+export const notificationsKey = (id: string) => ['writing-notifications', id]
+export const dashboardKey = ['writing-dashboard']
+export const classesKey = ['writing-classes']
 
 export interface DashboardData {
   classes: Classroom[]
   assignments: AssignmentListItem[]
 }
 export type AssignmentDetail = { assignment: Assignment } & (
-  | { submissions: SubmissionSummary[] }
+  | { submissions: SubmissionSummary[]; started: boolean }
   | { submission: Submission | null; reviews: AiReview[]; aiEnabled: boolean }
 )
 export interface GradingDetail {

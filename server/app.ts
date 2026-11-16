@@ -5,6 +5,8 @@ import path from 'node:path'
 import { auth } from './auth.ts'
 import { config } from './config.ts'
 import { ApiError } from './errors.ts'
+import { managementRoutes } from './management.ts'
+import { settingsRoutes } from './settings.ts'
 import { writingRoutes } from './writing.ts'
 
 export function createApp(
@@ -72,6 +74,8 @@ export function createApp(
   })
 
   app.register(writingRoutes)
+  app.register(managementRoutes)
+  app.register(settingsRoutes)
 
   if (options.serveFrontend) {
     app.register(fastifyStatic, { root: path.resolve('dist'), wildcard: false })

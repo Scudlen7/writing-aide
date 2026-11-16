@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import type { WritingDocument } from '@writing/writing'
+import { blockText, type WritingDocument } from '@writing/writing'
 import { Bold, Heading2, Italic, Pilcrow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -26,9 +26,11 @@ const extensions = [
 export function PaperEditor({
   value,
   onChange,
+  onParagraph,
 }: {
   value: WritingDocument
   onChange: (doc: WritingDocument) => void
+  onParagraph?: (block: number | null) => void
 }) {
   const { t } = useTranslation()
   const editor = useEditor({
@@ -51,6 +53,8 @@ export function PaperEditor({
       italic: editor?.isActive('italic'),
       heading: editor?.isActive('heading', { level: 2 }),
       paragraph: editor?.isActive('paragraph'),
+      selectedBlock: editor && editor.state.selection.$from.index(0),
+      selectedEnd: editor && editor.state.selection.$to.index(0),
     }),
   })
   if (!editor) return null
@@ -106,13 +110,38 @@ export function PaperEditor({
         >
           <Italic />
         </Button>
+        {onParagraph && (
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            className='ms-auto h-8'
+            disabled={
+              !marks?.paragraph ||
+              marks.selectedBlock == null ||
+              marks.selectedBlock !== marks.selectedEnd ||
+              !blockText(
+                value.content[marks.selectedBlock] ?? { type: 'paragraph' }
+              ).trim()
+            }
+            onClick={() => onParagraph(marks?.selectedBlock ?? null)}
+          >
+            {t('useParagraph')}
+          </Button>
+        )}
       </div>
       <EditorContent editor={editor} />
     </div>
   )
 }
 
-export function PaperText({ doc }: { doc: WritingDocument }) {
+export function PaperText({
+  doc,
+  anchors = false,
+}: {
+  doc: WritingDocument
+  anchors?: boolean
+}) {
   return (
     <div className='paper-prose'>
       {doc.content.map((block, index) =>
@@ -122,7 +151,16 @@ export function PaperText({ doc }: { doc: WritingDocument }) {
               ? 'h3'
               : 'h2'
             : 'p',
-          { key: index },
+          {
+            key: index,
+            ...(anchors
+              ? {
+                  id: `paper-paragraph-${index}`,
+                  tabIndex: -1,
+                  className: 'scroll-mt-24 rounded-sm target:bg-primary/10',
+                }
+              : {}),
+          },
           block.content?.map((item, position) => {
             if (item.type === 'hardBreak') return <br key={position} />
             return (

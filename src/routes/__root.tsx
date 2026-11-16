@@ -16,8 +16,19 @@ export const Route = createRootRouteWithContext<{
   beforeLoad: ({ location }) => {
     const path = location.pathname.replace(/\/$/, '') || '/'
     if (
-      !['/', '/sign-in', '/sign-up'].includes(path) &&
-      !path.startsWith('/assignments/')
+      ![
+        '/',
+        '/sign-in',
+        '/sign-up',
+        '/admin',
+        '/notifications',
+        '/settings',
+        '/settings/account',
+        '/settings/appearance',
+        '/settings/notifications',
+      ].includes(path) &&
+      !path.startsWith('/assignments/') &&
+      !path.startsWith('/classes/')
     ) {
       throw redirect({ to: '/' })
     }

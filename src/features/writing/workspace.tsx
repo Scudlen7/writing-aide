@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBlocker } from '@tanstack/react-router'
 import {
   countWriting,
+  blockText,
   emptyWork,
+  incompleteBefore,
+  stageComplete,
   stages,
   type AiReview,
   type AiTask,
@@ -33,7 +36,87 @@ import { PaperEditor, PaperText } from './editor'
 import { ReviewPanel } from './reviews'
 import { Field, Problem, Requirements } from './ui'
 
-type Action = 'save' | 'advance' | 'submit' | 'reviseAgain'
+type Action = 'save' | 'advance' | 'submit' | 'navigate'
+
+function StageTrack({
+  stage,
+  opened,
+  work,
+  locked,
+  pending,
+  go,
+}: {
+  stage: Stage
+  opened: Stage
+  work: Work
+  locked?: boolean
+  pending?: boolean
+  go?: (step: Stage) => void
+}) {
+  const { t } = useTranslation()
+  const current = stages.indexOf(stage)
+  const openedIndex = stages.indexOf(opened)
+  return (
+    <ol
+      className='grid grid-cols-5 gap-1 rounded-xl border bg-card p-2 sm:gap-2 sm:p-3'
+      aria-label={t('writingStages')}
+    >
+      {stages.map((step, index) => {
+        const missing =
+          index > current ? incompleteBefore(step, work) : undefined
+        const reachable =
+          !missing &&
+          (index <= openedIndex ||
+            (current === openedIndex && index === openedIndex + 1))
+        const status =
+          index === current
+            ? 'currentStage'
+            : !reachable
+              ? 'unavailableStage'
+              : index <= openedIndex && stageComplete(step, work)
+                ? 'completedStage'
+                : 'openStage'
+        const hint =
+          !reachable && missing
+            ? t('completeFirst', { stage: t(`stage.${missing}`) })
+            : t(status)
+        return (
+          <li key={step} aria-current={index === current ? 'step' : undefined}>
+            <Button
+              type='button'
+              variant='ghost'
+              className={cn(
+                'h-auto w-full flex-col gap-1 px-1 py-2 text-center whitespace-normal sm:px-2',
+                index === current && 'bg-primary/10'
+              )}
+              disabled={pending}
+              aria-disabled={locked || !reachable || index === current}
+              title={hint}
+              aria-label={`${t(`stage.${step}`)} · ${hint}`}
+              onClick={() => {
+                if (reachable && index !== current) go?.(step)
+              }}
+            >
+              <span className='grid size-5 shrink-0 place-items-center rounded-full border text-xs'>
+                {status === 'completedStage' ? (
+                  <Check size={13} aria-hidden='true' />
+                ) : (
+                  index + 1
+                )}
+              </span>
+              <span className='text-xs wrap-break-word'>
+                {t(`stage.${step}`)}
+              </span>
+              <span className='text-[0.65rem] text-muted-foreground'>
+                {t(status)}
+              </span>
+            </Button>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
 
 export function Workspace({
   assignment,
@@ -49,11 +132,10 @@ export function Workspace({
   const { t } = useTranslation()
   const [current, setCurrent] = useState(submission)
   const [allReviews, setReviews] = useState(reviews)
+  const [openedAt] = useState(Date.now)
   const stage = current?.stage ?? 'goals'
-  const stageIndex = stages.indexOf(stage)
-  const [closed] = useState(
-    () => new Date(assignment.dueAt).getTime() <= Date.now()
-  )
+  const closed =
+    assignment.archived || new Date(assignment.dueAt).getTime() <= openedAt
   const submitted = current && current.status !== 'draft'
 
   function upsertReview(next: AiReview) {
@@ -66,68 +148,57 @@ export function Workspace({
 
   return (
     <div className='space-y-5'>
-      <ol
-        className='grid grid-cols-5 gap-1 rounded-xl border bg-card p-2 sm:gap-2 sm:p-3'
-        aria-label={t('yourAssignments')}
-      >
-        {stages.map((step, index) => (
-          <li
-            key={step}
-            aria-current={
-              index === stageIndex && !submitted ? 'step' : undefined
-            }
-            className={cn(
-              'flex min-w-0 flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-xs font-medium sm:flex-row sm:gap-2 sm:px-2',
-              index === stageIndex && !submitted
-                ? 'bg-primary/10 text-foreground'
-                : 'text-muted-foreground'
-            )}
-          >
-            <span
-              className={cn(
-                'grid size-5 shrink-0 place-items-center rounded-full border sm:size-6',
-                index === stageIndex &&
-                  !submitted &&
-                  'border-primary bg-primary text-primary-foreground'
-              )}
-            >
-              {submitted || index < stageIndex ? (
-                <Check size={13} aria-hidden='true' />
-              ) : (
-                index + 1
-              )}
-            </span>
-            <span className='wrap-break-word'>{t(`stage.${step}`)}</span>
-          </li>
-        ))}
-      </ol>
       {submitted || closed ? (
-        <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
-          <div className='space-y-4'>
-            <section className='space-y-3 rounded-xl border bg-card p-4 sm:p-6'>
-              <h2 className='text-xl font-semibold'>
-                {t(submitted ? 'result' : 'writingClosed')}
-              </h2>
-              {current?.grade ? (
-                <GradeResult assignment={assignment} grade={current.grade} />
-              ) : (
-                <p className='text-sm text-muted-foreground'>
-                  {t(submitted ? 'waiting' : 'deadlineNote')}
-                </p>
+        <>
+          <StageTrack
+            stage={stage}
+            opened={current?.openedStage ?? stage}
+            work={current?.work ?? emptyWork}
+            locked
+          />
+          <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
+            <div className='space-y-4'>
+              <section
+                id='grade-feedback'
+                tabIndex={-1}
+                className='scroll-mt-24 space-y-3 rounded-xl border bg-card p-4 sm:p-6'
+              >
+                <h2 className='text-xl font-semibold'>
+                  {t(submitted ? 'result' : 'writingClosed')}
+                </h2>
+                {current?.grade ? (
+                  <GradeResult assignment={assignment} grade={current.grade} />
+                ) : (
+                  <p className='text-sm text-muted-foreground'>
+                    {t(
+                      submitted
+                        ? 'waiting'
+                        : assignment.archived
+                          ? 'archivedWritingNote'
+                          : 'deadlineNote'
+                    )}
+                  </p>
+                )}
+              </section>
+              {current && (
+                <WrittenWork
+                  work={current.work}
+                  anchors={Boolean(current.grade)}
+                />
               )}
-            </section>
-            {current && <WrittenWork work={current.work} />}
+            </div>
+            <aside className='space-y-3'>
+              <Requirements assignment={assignment} />
+              <ReviewPanel
+                reviews={allReviews.filter(
+                  (item) =>
+                    item.task !== 'assessment' || current?.status === 'graded'
+                )}
+                work={current?.work}
+              />
+            </aside>
           </div>
-          <aside className='space-y-3'>
-            <Requirements assignment={assignment} />
-            <ReviewPanel
-              reviews={allReviews.filter(
-                (item) =>
-                  item.task !== 'assessment' || current?.status === 'graded'
-              )}
-            />
-          </aside>
-        </div>
+        </>
       ) : (
         <StageEditor
           key={stage}
@@ -154,7 +225,7 @@ function stageFields(stage: Stage, work: Work): Partial<Work> {
       return { title: work.title, draft: work.draft, checked: work.checked }
     case 'revise':
       return {
-        title: work.title,
+        revisionTitle: work.revisionTitle ?? work.title,
         revision: work.revision,
         checked: work.checked,
       }
@@ -189,6 +260,10 @@ function StageEditor({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [reviewing, setReviewing] = useState(false)
+  const [selected, setSelected] = useState<{
+    block: number
+    text: string
+  } | null>(null)
   const busy = useRef(false)
   const dirty = JSON.stringify(fields) !== savedFields
   const version = submission?.version ?? 0
@@ -196,6 +271,11 @@ function StageEditor({
   const count = countWriting(stageDoc, assignment.language)
   const unit = t(assignment.language === 'en' ? 'words' : 'characters')
   const hasDoc = stage === 'draft' || stage === 'revise'
+  const selectionValid =
+    selected &&
+    stageDoc.content[selected.block]?.type === 'paragraph' &&
+    selected.text === blockText(stageDoc.content[selected.block])
+  const stepIndex = stages.indexOf(stage)
 
   useBlocker({
     shouldBlockFn: ({ current, next }) =>
@@ -207,9 +287,9 @@ function StageEditor({
   })
 
   const persist = useCallback(
-    async (action: Action) => {
+    async (action: Action, target?: Stage) => {
       if (busy.current) return false
-      if (action === 'save' && !dirty) return true
+      if (action === 'save' && !dirty) return version
       busy.current = true
       setPending(true)
       setError(null)
@@ -221,12 +301,13 @@ function StageEditor({
             version,
             stage,
             action,
+            target,
             changes: fields,
           }
         )
         setSavedFields(JSON.stringify(fields))
         onSaved(saved)
-        return true
+        return saved.version
       } catch (cause) {
         setError(cause)
         return false
@@ -256,11 +337,16 @@ function StageEditor({
   async function generate(task: AiTask) {
     setReviewing(true)
     try {
-      if (!(await persist('save'))) return
+      const savedVersion = await persist('save')
+      if (savedVersion === false) return
       const result = await request<AiReview>(
         `/api/assignments/${assignment.id}/reviews`,
         'POST',
-        { task }
+        {
+          task,
+          version: savedVersion,
+          block: task === 'revision' ? selected?.block : undefined,
+        }
       )
       onReviewSaved(result)
     } finally {
@@ -275,156 +361,197 @@ function StageEditor({
   )
 
   return (
-    <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
-      <section className='min-w-0 space-y-5 rounded-xl border bg-card p-4 sm:p-6'>
-        <div>
-          <h2 className='text-xl font-semibold tracking-tight'>
-            {t(`stage.${stage}`)}
-          </h2>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            {t(`stageHelp.${stage}`)}
-          </p>
-        </div>
-        {stage === 'goals' && (
-          <>
-            <Field label={t('goal')}>
+    <>
+      <StageTrack
+        stage={stage}
+        opened={submission?.openedStage ?? stage}
+        work={{ ...work, ...fields }}
+        pending={pending || reviewing}
+        go={(step) => void persist('navigate', step)}
+      />
+      <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
+        <section className='min-w-0 space-y-5 rounded-xl border bg-card p-4 sm:p-6'>
+          <div>
+            <h2 className='text-xl font-semibold tracking-tight'>
+              {t(`stage.${stage}`)}
+            </h2>
+            <p className='mt-1 text-sm text-muted-foreground'>
+              {t(`stageHelp.${stage}`)}
+            </p>
+          </div>
+          {stage === 'goals' && (
+            <>
+              <Field label={t('goal')}>
+                <Textarea
+                  value={fields.goal}
+                  rows={5}
+                  maxLength={4000}
+                  onChange={(event) => update({ goal: event.target.value })}
+                />
+              </Field>
+              <Field label={t('aiGoal')}>
+                <Textarea
+                  value={fields.aiGoal}
+                  rows={3}
+                  maxLength={4000}
+                  onChange={(event) => update({ aiGoal: event.target.value })}
+                />
+              </Field>
+            </>
+          )}
+          {stage === 'outline' && (
+            <Field label={t('outline')}>
               <Textarea
-                value={fields.goal}
-                rows={5}
-                maxLength={4000}
-                onChange={(event) => update({ goal: event.target.value })}
+                value={fields.outline}
+                rows={16}
+                className='min-h-64 resize-y sm:min-h-96'
+                maxLength={12000}
+                onChange={(event) => update({ outline: event.target.value })}
               />
             </Field>
-            <Field label={t('aiGoal')}>
-              <Textarea
-                value={fields.aiGoal}
-                rows={3}
-                maxLength={4000}
-                onChange={(event) => update({ aiGoal: event.target.value })}
-              />
-            </Field>
-          </>
-        )}
-        {stage === 'outline' && (
-          <Field label={t('outline')}>
-            <Textarea
-              value={fields.outline}
-              rows={10}
-              maxLength={12000}
-              onChange={(event) => update({ outline: event.target.value })}
-            />
-          </Field>
-        )}
-        {hasDoc && (
-          <>
-            <Field label={t('paperTitle')}>
-              <Input
-                value={fields.title}
-                maxLength={240}
-                onChange={(event) => update({ title: event.target.value })}
-              />
-            </Field>
-            <div>
-              <div className='mb-2 flex flex-wrap justify-between gap-2 text-sm'>
-                <span className='font-medium'>{t('manuscript')}</span>
-                <span className='text-muted-foreground tabular-nums'>
-                  {t('wordCount', { count, unit })} ·{' '}
-                  {t('lengthRule', {
-                    min: assignment.minLength,
-                    max: assignment.maxLength,
-                    unit,
-                  })}
-                </span>
+          )}
+          {hasDoc && (
+            <>
+              <Field label={t('paperTitle')}>
+                <Input
+                  value={
+                    stage === 'draft' ? fields.title : fields.revisionTitle
+                  }
+                  maxLength={240}
+                  onChange={(event) =>
+                    update(
+                      stage === 'draft'
+                        ? { title: event.target.value }
+                        : { revisionTitle: event.target.value }
+                    )
+                  }
+                />
+              </Field>
+              <div>
+                <div className='mb-2 flex flex-wrap justify-between gap-2 text-sm'>
+                  <span className='font-medium'>{t('manuscript')}</span>
+                  <span className='text-muted-foreground tabular-nums'>
+                    {t('wordCount', { count, unit })} ·{' '}
+                    {t('lengthRule', {
+                      min: assignment.minLength,
+                      max: assignment.maxLength,
+                      unit,
+                    })}
+                  </span>
+                </div>
+                <PaperEditor
+                  value={stageDoc}
+                  onChange={(doc) =>
+                    update(
+                      stage === 'draft' ? { draft: doc } : { revision: doc }
+                    )
+                  }
+                  onParagraph={
+                    stage === 'revise'
+                      ? (block) => {
+                          if (block !== null)
+                            setSelected({
+                              block,
+                              text: blockText(stageDoc.content[block]),
+                            })
+                        }
+                      : undefined
+                  }
+                />
               </div>
-              <PaperEditor
-                value={stageDoc}
-                onChange={(doc) =>
-                  update(stage === 'draft' ? { draft: doc } : { revision: doc })
-                }
-              />
-            </div>
-            {stage === 'revise' && (
+              {stage === 'revise' && (
+                <details className='rounded-lg border p-3'>
+                  <summary className='cursor-pointer text-sm font-medium'>
+                    {t('viewDraft')}
+                  </summary>
+                  <p className='mt-2 font-medium'>{work.title}</p>
+                  <PaperText doc={work.draft} />
+                </details>
+              )}
+              {assignment.checklist.length > 0 && (
+                <fieldset className='grid gap-2 rounded-lg border p-3'>
+                  <legend className='px-1 text-sm font-medium'>
+                    {t('checklist')}
+                  </legend>
+                  {assignment.checklist.map((item, index) => (
+                    <label
+                      key={index}
+                      className='flex items-start gap-2 text-sm'
+                    >
+                      <input
+                        type='checkbox'
+                        className='mt-1 accent-primary'
+                        checked={fields.checked?.includes(index)}
+                        onChange={(event) => {
+                          const checked = fields.checked ?? []
+                          update({
+                            checked: event.target.checked
+                              ? [...checked, index]
+                              : checked.filter(
+                                  (position) => position !== index
+                                ),
+                          })
+                        }}
+                      />
+                      {item}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+            </>
+          )}
+          {stage === 'reflect' && (
+            <>
+              <Field label={t('reflection')}>
+                <Textarea
+                  value={fields.reflection}
+                  rows={6}
+                  maxLength={8000}
+                  onChange={(event) =>
+                    update({ reflection: event.target.value })
+                  }
+                />
+              </Field>
               <details className='rounded-lg border p-3'>
                 <summary className='cursor-pointer text-sm font-medium'>
-                  {t('viewDraft')}
+                  {t('finalDraft')} · {t('wordCount', { count, unit })}
                 </summary>
-                <PaperText doc={work.draft} />
+                <PaperText doc={work.revision} />
               </details>
-            )}
-            {assignment.checklist.length > 0 && (
-              <fieldset className='grid gap-2 rounded-lg border p-3'>
-                <legend className='px-1 text-sm font-medium'>
-                  {t('checklist')}
-                </legend>
-                {assignment.checklist.map((item, index) => (
-                  <label key={index} className='flex items-start gap-2 text-sm'>
-                    <input
-                      type='checkbox'
-                      className='mt-1 accent-primary'
-                      checked={fields.checked?.includes(index)}
-                      onChange={(event) => {
-                        const checked = fields.checked ?? []
-                        update({
-                          checked: event.target.checked
-                            ? [...checked, index]
-                            : checked.filter((position) => position !== index),
-                        })
-                      }}
-                    />
-                    {item}
-                  </label>
-                ))}
-              </fieldset>
-            )}
-          </>
-        )}
-        {stage === 'reflect' && (
-          <>
-            <Field label={t('reflection')}>
-              <Textarea
-                value={fields.reflection}
-                rows={6}
-                maxLength={8000}
-                onChange={(event) => update({ reflection: event.target.value })}
-              />
-            </Field>
-            <details className='rounded-lg border p-3'>
-              <summary className='cursor-pointer text-sm font-medium'>
-                {t('finalDraft')} · {t('wordCount', { count, unit })}
-              </summary>
-              <PaperText doc={work.revision} />
-            </details>
-          </>
-        )}
-        <Problem error={error} />
-        <div className='flex flex-wrap items-center justify-between gap-3 border-t pt-4'>
-          <div className='flex flex-wrap items-center gap-2'>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              disabled={pending || !dirty || reviewing}
-              onClick={() => void persist('save')}
-            >
-              {t('save')}
-            </Button>
-            <span className='text-xs text-muted-foreground' role='status'>
-              {t(pending ? 'saving' : dirty ? 'unsaved' : 'saved')}
-            </span>
-          </div>
-          <div className='flex flex-wrap gap-2'>
-            {stage === 'reflect' ? (
-              <>
+            </>
+          )}
+          <Problem error={error} />
+          <div className='flex flex-wrap items-center justify-between gap-3 border-t pt-4'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                disabled={pending || !dirty || reviewing}
+                onClick={() => void persist('save')}
+              >
+                {t('save')}
+              </Button>
+              <span className='text-xs text-muted-foreground' role='status'>
+                {t(pending ? 'saving' : dirty ? 'unsaved' : 'saved')}
+              </span>
+            </div>
+            <div className='flex flex-wrap gap-2'>
+              {stepIndex > 0 && (
                 <Button
                   type='button'
                   variant='ghost'
                   size='sm'
                   disabled={pending || reviewing}
-                  onClick={() => void persist('reviseAgain')}
+                  onClick={() =>
+                    void persist('navigate', stages[stepIndex - 1])
+                  }
                 >
                   <ChevronLeft />
-                  {t('reviseAgain')}
+                  {t('previousStage')}
                 </Button>
+              )}
+              {stage === 'reflect' ? (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button type='button' disabled={pending || reviewing}>
@@ -446,46 +573,56 @@ function StageEditor({
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-              </>
-            ) : (
-              <Button
-                type='button'
-                disabled={pending || reviewing}
-                onClick={() => void persist('advance')}
-              >
-                {t('next')}
-                <ArrowRight />
-              </Button>
-            )}
+              ) : (
+                <Button
+                  type='button'
+                  disabled={pending || reviewing}
+                  onClick={() => void persist('advance')}
+                >
+                  {t('next')}
+                  <ArrowRight />
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      </section>
-      <aside className='space-y-3'>
-        <Requirements assignment={assignment} open={stage === 'goals'} />
-        {stage !== 'goals' && work.outline.trim() && stage !== 'outline' && (
-          <details className='rounded-xl border bg-card p-4'>
-            <summary className='cursor-pointer text-sm font-semibold'>
-              {t('outline')}
-            </summary>
-            <p className='mt-3 text-sm wrap-break-word whitespace-pre-wrap'>
-              {work.outline}
-            </p>
-          </details>
-        )}
-        <ReviewPanel
-          reviews={taskReviews}
-          enabled={aiEnabled}
-          disabled={pending || reviewing}
-          label={reviewTask === 'outline' ? 'aiOutline' : 'aiRevision'}
-          onReview={reviewTask ? () => generate(reviewTask) : undefined}
-          decisions={
-            stage === 'revise'
-              ? { assignmentId: assignment.id, onSaved: onReviewSaved }
-              : undefined
-          }
-        />
-      </aside>
-    </div>
+        </section>
+        <aside className='space-y-3'>
+          <Requirements assignment={assignment} open={stage === 'goals'} />
+          {stage !== 'goals' && work.outline.trim() && stage !== 'outline' && (
+            <details className='rounded-xl border bg-card p-4'>
+              <summary className='cursor-pointer text-sm font-semibold'>
+                {t('outline')}
+              </summary>
+              <p className='mt-3 text-sm wrap-break-word whitespace-pre-wrap'>
+                {work.outline}
+              </p>
+            </details>
+          )}
+          <ReviewPanel
+            reviews={taskReviews}
+            enabled={aiEnabled}
+            disabled={
+              pending || reviewing || (stage === 'revise' && !selectionValid)
+            }
+            selected={
+              stage === 'revise'
+                ? selectionValid
+                  ? selected.text
+                  : ''
+                : undefined
+            }
+            work={{ ...work, ...fields }}
+            label={reviewTask === 'outline' ? 'aiOutline' : 'aiRevision'}
+            onReview={reviewTask ? () => generate(reviewTask) : undefined}
+            decisions={
+              stage === 'revise' || stage === 'outline'
+                ? { assignmentId: assignment.id, onSaved: onReviewSaved }
+                : undefined
+            }
+          />
+        </aside>
+      </div>
+    </>
   )
 }
 
@@ -516,7 +653,14 @@ export function GradeResult({
             key={index}
             className='flex justify-between gap-3 border-b py-2 text-sm'
           >
-            <dt className='wrap-break-word'>{item.label}</dt>
+            <dt className='wrap-break-word'>
+              {item.label}
+              {grade.criteriaFeedback?.[index] && (
+                <p className='mt-1 whitespace-pre-wrap text-muted-foreground'>
+                  {grade.criteriaFeedback[index]}
+                </p>
+              )}
+            </dt>
             <dd className='shrink-0 tabular-nums'>
               {grade.scores[index]} / {item.max}
             </dd>
@@ -527,11 +671,38 @@ export function GradeResult({
       <p className='text-sm wrap-break-word whitespace-pre-wrap'>
         {grade.feedback}
       </p>
+      {Boolean(grade.annotations?.length) && (
+        <div className='space-y-2'>
+          <h3 className='text-sm font-semibold'>{t('annotations')}</h3>
+          {grade.annotations?.map((note, index) => (
+            <div className='rounded-md border p-3 text-sm' key={index}>
+              <a
+                className='font-medium text-primary underline'
+                href={`#paper-paragraph-${note.block}`}
+              >
+                {t('paragraphNumber', { number: note.block + 1 })}
+              </a>
+              {note.criterion !== undefined && (
+                <span> · {assignment.rubric[note.criterion]?.label}</span>
+              )}
+              <p className='mt-1 wrap-break-word whitespace-pre-wrap'>
+                {note.text}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-export function WrittenWork({ work }: { work: Work }) {
+export function WrittenWork({
+  work,
+  anchors = false,
+}: {
+  work: Work
+  anchors?: boolean
+}) {
   const { t } = useTranslation()
   const finalDoc = work.revision.content.some((item) => item.content?.length)
     ? work.revision
@@ -541,10 +712,12 @@ export function WrittenWork({ work }: { work: Work }) {
       <div>
         <p className='text-sm text-muted-foreground'>{t('finalDraft')}</p>
         <h2 className='text-xl font-semibold tracking-tight wrap-break-word'>
-          {work.title || t('emptyText')}
+          {(finalDoc === work.revision
+            ? (work.revisionTitle ?? work.title)
+            : work.title) || t('emptyText')}
         </h2>
       </div>
-      <PaperText doc={finalDoc} />
+      <PaperText doc={finalDoc} anchors={anchors} />
       <div className='grid gap-2 border-t pt-3 text-sm'>
         <details>
           <summary className='cursor-pointer font-medium'>{t('goal')}</summary>
@@ -569,6 +742,7 @@ export function WrittenWork({ work }: { work: Work }) {
           <summary className='cursor-pointer font-medium'>
             {t('initialDraft')}
           </summary>
+          <p className='mt-2 font-medium'>{work.title}</p>
           <PaperText doc={work.draft} />
         </details>
         <details>

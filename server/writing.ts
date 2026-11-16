@@ -1,31 +1,39 @@
 import { z } from 'zod'
-import { fromNodeHeaders } from 'better-auth/node'
 import { and, desc, eq, ne, sql } from 'drizzle-orm'
-import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { randomBytes } from 'node:crypto'
+import type { FastifyInstance } from 'fastify'
 import {
   aiTasks,
   assignmentInput,
+  blockText,
   countWriting,
   decisionSchema,
   documentText,
   emptyWork,
   gradeInput,
+  incompleteBefore,
   saveInput,
   stages,
-  type Identity,
   type Stage,
   type Work,
 } from '../shared/writing.ts'
 import { aiEnabled, reviewWriting } from './ai.ts'
-import { auth } from './auth.ts'
+import {
+  accessibleAssignment,
+  assignmentFields,
+  assignmentForWrite,
+  assignmentRequirements,
+  startedWriting,
+} from './assignments.ts'
 import { db } from './db.ts'
 import { ApiError, read } from './errors.ts'
+import { identity } from './identity.ts'
+import { studentCount } from './management.ts'
 import {
   aiReview,
   assignment,
   classroom,
   enrollment,
+  notification,
   submission,
   user,
 } from './schema.ts'
@@ -39,72 +47,22 @@ const reviewParams = assignmentParams.extend({
 })
 const pendingReviews = new Set<string>()
 
-async function identity(
-  request: FastifyRequest,
-  role?: Identity['role']
-): Promise<Identity> {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(request.headers),
-  })
-  if (!session) throw new ApiError(401, 'signInRequired')
-  const [person] = await db
-    .select({ id: user.id, name: user.name, role: user.role })
-    .from(user)
-    .where(eq(user.id, session.user.id))
-  if (!person) throw new ApiError(401, 'signInRequired')
-  if (role && person.role !== role) throw new ApiError(403, 'forbidden')
-  return person
-}
-
-async function accessibleAssignment(id: string, person: Identity) {
-  const [row] = await db
-    .select({ ...assignmentFields, classroomName: classroom.name })
-    .from(assignment)
-    .innerJoin(classroom, eq(classroom.id, assignment.classroomId))
-    .leftJoin(
-      enrollment,
-      and(
-        eq(enrollment.classroomId, classroom.id),
-        eq(enrollment.studentId, person.id)
-      )
-    )
-    .where(
-      and(
-        eq(assignment.id, id),
-        person.role === 'teacher'
-          ? eq(classroom.teacherId, person.id)
-          : eq(enrollment.studentId, person.id)
-      )
-    )
-  if (!row) throw new ApiError(404, 'notFound')
-  return row
-}
-
-const assignmentFields = {
-  id: assignment.id,
-  classroomId: assignment.classroomId,
-  title: assignment.title,
-  instructions: assignment.instructions,
-  language: assignment.language,
-  dueAt: assignment.dueAt,
-  minLength: assignment.minLength,
-  maxLength: assignment.maxLength,
-  checklist: assignment.checklist,
-  rubric: assignment.rubric,
-}
 const submissionFields = {
   id: submission.id,
   stage: submission.stage,
+  openedStage: submission.openedStage,
   status: submission.status,
   version: submission.version,
   work: submission.work,
   grade: submission.grade,
   submittedAt: submission.submittedAt,
+  requirements: submission.requirements,
 }
 const reviewFields = {
   id: aiReview.id,
   task: aiReview.task,
   result: aiReview.result,
+  source: aiReview.source,
   decisions: aiReview.decisions,
   createdAt: aiReview.createdAt,
 }
@@ -141,26 +99,14 @@ const editable: Record<Stage, readonly (keyof Work)[]> = {
   goals: ['goal', 'aiGoal'],
   outline: ['outline'],
   draft: ['title', 'draft', 'checked'],
-  revise: ['title', 'revision', 'checked'],
+  revise: ['title', 'revisionTitle', 'revision', 'checked'],
   reflect: ['reflection'],
 }
 
-function validateStage(stage: Stage, work: Work) {
-  const complete = {
-    goals: work.goal.trim(),
-    outline: work.outline.trim(),
-    draft: work.title.trim() && documentText(work.draft).trim(),
-    revise: work.title.trim() && documentText(work.revision).trim(),
-    reflect: work.reflection.trim(),
-  }
-  if (!complete[stage]) throw new ApiError(400, 'incompleteStage')
-}
-
 export async function writingRoutes(app: FastifyInstance) {
-  app.get('/api/me', async (request) => identity(request))
-
   app.get('/api/dashboard', async (request) => {
     const person = await identity(request)
+    if (person.role === 'admin') throw new ApiError(403, 'forbidden')
     if (person.role === 'teacher') {
       const [classes, assignments] = await Promise.all([
         db
@@ -168,6 +114,8 @@ export async function writingRoutes(app: FastifyInstance) {
             id: classroom.id,
             name: classroom.name,
             joinCode: classroom.joinCode,
+            archived: classroom.archived,
+            studentCount,
           })
           .from(classroom)
           .where(eq(classroom.teacherId, person.id))
@@ -193,7 +141,12 @@ export async function writingRoutes(app: FastifyInstance) {
         .select({ id: classroom.id, name: classroom.name })
         .from(classroom)
         .innerJoin(enrollment, eq(enrollment.classroomId, classroom.id))
-        .where(eq(enrollment.studentId, person.id))
+        .where(
+          and(
+            eq(enrollment.studentId, person.id),
+            eq(enrollment.removed, false)
+          )
+        )
         .orderBy(classroom.name),
       db
         .select({
@@ -208,7 +161,8 @@ export async function writingRoutes(app: FastifyInstance) {
           enrollment,
           and(
             eq(enrollment.classroomId, classroom.id),
-            eq(enrollment.studentId, person.id)
+            eq(enrollment.studentId, person.id),
+            eq(enrollment.removed, false)
           )
         )
         .leftJoin(
@@ -223,27 +177,6 @@ export async function writingRoutes(app: FastifyInstance) {
     return { classes, assignments }
   })
 
-  app.post('/api/classes', async (request, reply) => {
-    const teacher = await identity(request, 'teacher')
-    const { name } = read(
-      z.object({ name: z.string().trim().min(1).max(100) }),
-      request.body
-    )
-    const [row] = await db
-      .insert(classroom)
-      .values({
-        name,
-        teacherId: teacher.id,
-        joinCode: randomBytes(8).toString('hex').toUpperCase(),
-      })
-      .returning({
-        id: classroom.id,
-        name: classroom.name,
-        joinCode: classroom.joinCode,
-      })
-    return reply.code(201).send(row)
-  })
-
   app.post('/api/classes/join', async (request) => {
     const student = await identity(request, 'student')
     const { code } = read(
@@ -256,16 +189,29 @@ export async function writingRoutes(app: FastifyInstance) {
       }),
       request.body
     )
-    const [row] = await db
-      .select({ id: classroom.id, name: classroom.name })
-      .from(classroom)
-      .where(eq(classroom.joinCode, code))
-    if (!row) throw new ApiError(404, 'invalidJoinCode')
-    await db
-      .insert(enrollment)
-      .values({ classroomId: row.id, studentId: student.id })
-      .onConflictDoNothing()
-    return row
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ id: classroom.id, name: classroom.name })
+        .from(classroom)
+        .where(and(eq(classroom.joinCode, code), eq(classroom.archived, false)))
+        .for('update')
+      if (!row) throw new ApiError(404, 'invalidJoinCode')
+      const [member] = await tx
+        .select({ removed: enrollment.removed })
+        .from(enrollment)
+        .where(
+          and(
+            eq(enrollment.classroomId, row.id),
+            eq(enrollment.studentId, student.id)
+          )
+        )
+      if (member?.removed) throw new ApiError(403, 'membershipRemoved')
+      await tx
+        .insert(enrollment)
+        .values({ classroomId: row.id, studentId: student.id })
+        .onConflictDoNothing()
+      return row
+    })
   })
 
   app.post('/api/assignments', async (request, reply) => {
@@ -274,22 +220,31 @@ export async function writingRoutes(app: FastifyInstance) {
     const input = read(assignmentInput, request.body)
     const dueAt = new Date(input.dueAt)
     if (dueAt <= new Date()) throw new ApiError(400, 'invalidDeadline')
-    const [owned] = await db
-      .select({ id: classroom.id })
-      .from(classroom)
-      .where(
-        and(eq(classroom.id, classroomId), eq(classroom.teacherId, teacher.id))
-      )
-    if (!owned) throw new ApiError(404, 'notFound')
-    const [row] = await db
-      .insert(assignment)
-      .values({ ...input, classroomId, dueAt })
-      .returning({ id: assignment.id })
+    const row = await db.transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: classroom.id })
+        .from(classroom)
+        .where(
+          and(
+            eq(classroom.id, classroomId),
+            eq(classroom.teacherId, teacher.id),
+            eq(classroom.archived, false)
+          )
+        )
+        .for('update')
+      if (!owned) throw new ApiError(404, 'notFound')
+      const [created] = await tx
+        .insert(assignment)
+        .values({ ...input, classroomId, dueAt })
+        .returning({ id: assignment.id })
+      return created
+    })
     return reply.code(201).send(row)
   })
 
   app.get('/api/assignments/:id', async (request) => {
     const person = await identity(request)
+    if (person.role === 'admin') throw new ApiError(403, 'forbidden')
     const { id } = read(assignmentParams, request.params)
     const row = await accessibleAssignment(id, person)
     if (person.role === 'teacher') {
@@ -299,7 +254,7 @@ export async function writingRoutes(app: FastifyInstance) {
           studentName: user.name,
           status: submission.status,
           submittedAt: submission.submittedAt,
-          title: sql<string>`${submission.work}->>'title'`,
+          title: sql<string>`coalesce(${submission.work}->>'revisionTitle', ${submission.work}->>'title')`,
         })
         .from(submission)
         .innerJoin(user, eq(user.id, submission.studentId))
@@ -307,14 +262,14 @@ export async function writingRoutes(app: FastifyInstance) {
           and(eq(submission.assignmentId, id), ne(submission.status, 'draft'))
         )
         .orderBy(desc(submission.submittedAt))
-      return { assignment: row, submissions }
+      return { assignment: row, submissions, started: await startedWriting(id) }
     }
     const [own] = await db
       .select(submissionFields)
       .from(submission)
       .where(ownSubmission(id, person.id))
     return {
-      assignment: row,
+      assignment: { ...row, ...own?.requirements },
       submission: own ?? null,
       reviews: own ? await reviewsFor(own.id, own.status === 'graded') : [],
       aiEnabled,
@@ -324,10 +279,13 @@ export async function writingRoutes(app: FastifyInstance) {
   app.put('/api/assignments/:id/work', async (request) => {
     const person = await identity(request, 'student')
     const { id } = read(assignmentParams, request.params)
-    const row = await accessibleAssignment(id, person)
-    const { stage, version, action, changes } = read(saveInput, request.body)
+    const { stage, version, action, target, changes } = read(
+      saveInput,
+      request.body
+    )
 
     return db.transaction(async (tx) => {
+      const row = await assignmentForWrite(tx, id, person)
       if (version === 0) {
         await tx
           .insert(submission)
@@ -341,7 +299,7 @@ export async function writingRoutes(app: FastifyInstance) {
         .for('update')
       if (!own || own.version !== version || own.stage !== stage)
         throw new ApiError(409, 'versionConflict')
-      if (own.status !== 'draft' || row.dueAt <= new Date())
+      if (own.status !== 'draft' || row.archived || row.dueAt <= new Date())
         throw new ApiError(409, 'writingClosed')
       if (
         Object.keys(changes).some(
@@ -350,24 +308,47 @@ export async function writingRoutes(app: FastifyInstance) {
       )
         throw new ApiError(400, 'invalidInput')
       const work: Work = { ...own.work, ...changes }
+      if (stage === 'revise' && changes.title !== undefined) {
+        work.revisionTitle = changes.revisionTitle ?? changes.title
+        work.title = own.work.title
+      }
       if (work.checked.some((index) => index >= row.checklist.length))
         throw new ApiError(400, 'invalidInput')
-      if (action === 'advance' || action === 'submit')
-        validateStage(stage, work)
-
-      let nextStage = stage
+      let nextStage = target ?? stage
+      let openedStage = own.openedStage
       let status: 'draft' | 'submitted' = 'draft'
       if (action === 'advance') {
         if (stage === 'reflect') throw new ApiError(400, 'invalidInput')
         nextStage = stages[stages.indexOf(stage) + 1]
-        if (stage === 'draft') work.revision = work.draft
       }
       if (action === 'reviseAgain') {
         if (stage !== 'reflect') throw new ApiError(400, 'invalidInput')
         nextStage = 'revise'
       }
+      if ((action === 'navigate') !== Boolean(target))
+        throw new ApiError(400, 'invalidInput')
+      if (nextStage !== stage) {
+        const index = stages.indexOf(nextStage)
+        const opened = stages.indexOf(openedStage)
+        if (
+          index > opened + 1 ||
+          (index > opened && stages.indexOf(stage) !== opened)
+        )
+          throw new ApiError(400, 'incompleteStage')
+        if (index > stages.indexOf(stage) && incompleteBefore(nextStage, work))
+          throw new ApiError(400, 'incompleteStage')
+        if (index > opened) {
+          openedStage = nextStage
+          if (nextStage === 'revise') {
+            work.revision = work.draft
+            work.revisionTitle = work.title
+          }
+        }
+      }
       if (action === 'submit') {
         if (stage !== 'reflect') throw new ApiError(400, 'invalidInput')
+        if (incompleteBefore('reflect', work) || !work.reflection.trim())
+          throw new ApiError(400, 'incompleteStage')
         const count = countWriting(work.revision, row.language)
         if (count < row.minLength || count > row.maxLength)
           throw new ApiError(400, 'lengthOutsideRange')
@@ -378,12 +359,38 @@ export async function writingRoutes(app: FastifyInstance) {
         .set({
           work,
           stage: nextStage,
+          openedStage,
           status,
           version: version + 1,
           submittedAt: status === 'submitted' ? new Date() : null,
+          requirements:
+            status === 'submitted' ? assignmentRequirements(row) : null,
         })
         .where(eq(submission.id, own.id))
         .returning(submissionFields)
+      if (status === 'submitted') {
+        const [recipient] = await tx
+          .select({ id: user.id })
+          .from(classroom)
+          .innerJoin(user, eq(user.id, classroom.teacherId))
+          .where(
+            and(
+              eq(classroom.id, row.classroomId),
+              eq(user.submissionNotifications, true)
+            )
+          )
+        if (recipient)
+          await tx
+            .insert(notification)
+            .values({
+              recipientId: recipient.id,
+              assignmentId: id,
+              submissionId: saved.id,
+              kind: 'submission',
+              eventKey: `submission:${saved.id}`,
+            })
+            .onConflictDoNothing()
+      }
       return saved
     })
   })
@@ -399,7 +406,7 @@ export async function writingRoutes(app: FastifyInstance) {
       .where(visibleSubmission(id, submissionId))
     if (!selected) throw new ApiError(404, 'notFound')
     return {
-      assignment: row,
+      assignment: { ...row, ...selected.requirements },
       submission: selected,
       reviews: await reviewsFor(selected.id),
       aiEnabled,
@@ -411,34 +418,65 @@ export async function writingRoutes(app: FastifyInstance) {
     async (request) => {
       const teacher = await identity(request, 'teacher')
       const { id, submissionId } = read(submissionParams, request.params)
-      const row = await accessibleAssignment(id, teacher)
       const grade = read(gradeInput, request.body)
-      if (
-        grade.scores.length !== row.rubric.length ||
-        grade.scores.some((score, index) => score > row.rubric[index].max)
-      ) {
-        throw new ApiError(400, 'invalidScore')
-      }
-      const [graded] = await db
-        .update(submission)
-        .set({ grade, status: 'graded' })
-        .where(
-          and(
-            visibleSubmission(id, submissionId),
-            eq(submission.status, 'submitted')
-          )
+      return db.transaction(async (tx) => {
+        const row = await assignmentForWrite(tx, id, teacher)
+        const [selected] = await tx
+          .select()
+          .from(submission)
+          .where(visibleSubmission(id, submissionId))
+          .for('update')
+        if (selected?.status !== 'submitted')
+          throw new ApiError(409, 'gradeUnavailable')
+        const rubric = selected.requirements?.rubric ?? row.rubric
+        if (
+          grade.scores.length !== rubric.length ||
+          grade.scores.some((score, index) => score > rubric[index].max) ||
+          (grade.criteriaFeedback &&
+            grade.criteriaFeedback.length !== rubric.length)
         )
-        .returning(submissionFields)
-      if (!graded) throw new ApiError(409, 'gradeUnavailable')
-      return graded
+          throw new ApiError(400, 'invalidScore')
+        if (
+          grade.annotations?.some(({ block, criterion }) => {
+            const paragraph = selected.work.revision.content[block]
+            return (
+              paragraph?.type !== 'paragraph' ||
+              !blockText(paragraph).trim() ||
+              (criterion !== undefined && criterion >= rubric.length)
+            )
+          })
+        )
+          throw new ApiError(400, 'invalidAnnotation')
+        const [graded] = await tx
+          .update(submission)
+          .set({ grade, status: 'graded' })
+          .where(eq(submission.id, selected.id))
+          .returning(submissionFields)
+        await tx
+          .insert(notification)
+          .values({
+            recipientId: selected.studentId,
+            assignmentId: id,
+            submissionId,
+            kind: 'grade',
+            eventKey: `grade:${submissionId}`,
+          })
+          .onConflictDoNothing()
+        return graded
+      })
     }
   )
 
   app.post('/api/assignments/:id/reviews', async (request, reply) => {
     const { id } = read(assignmentParams, request.params)
-    const { task, submissionId } = read(
+    const { task, submissionId, block, version } = read(
       z
-        .object({ task: z.enum(aiTasks), submissionId: uuid.optional() })
+        .object({
+          task: z.enum(aiTasks),
+          submissionId: uuid.optional(),
+          block: z.number().int().min(0).max(1999).optional(),
+          version: z.number().int().min(0).optional(),
+        })
         .refine((input) =>
           input.task === 'assessment'
             ? Boolean(input.submissionId)
@@ -462,26 +500,49 @@ export async function writingRoutes(app: FastifyInstance) {
 
     const studentTask = task === 'outline' || task === 'revision'
     if (studentTask) {
-      if (target.status !== 'draft' || row.dueAt <= new Date())
+      if (target.status !== 'draft' || row.archived || row.dueAt <= new Date())
         throw new ApiError(409, 'writingClosed')
+      if (version !== undefined && version !== target.version)
+        throw new ApiError(409, 'versionConflict')
       if (
         task === 'outline' &&
         (target.stage !== 'outline' || !target.work.outline.trim())
       )
         throw new ApiError(400, 'incompleteStage')
-      if (
-        task === 'revision' &&
-        (target.stage !== 'revise' ||
-          !documentText(target.work.revision).trim())
-      )
+      if (task === 'revision' && target.stage !== 'revise')
         throw new ApiError(400, 'incompleteStage')
     }
+    const paragraph =
+      block === undefined ? undefined : target.work.revision.content[block]
+    if (
+      task === 'revision' &&
+      (paragraph?.type !== 'paragraph' || !blockText(paragraph).trim())
+    )
+      throw new ApiError(400, 'selectParagraph')
+    const content =
+      task === 'outline'
+        ? target.work.outline
+        : task === 'revision' && paragraph
+          ? blockText(paragraph)
+          : documentText(target.work.revision)
+    const source = studentTask
+      ? {
+          version: target.version,
+          text: content,
+          ...(task === 'revision' ? { block } : {}),
+        }
+      : null
     if (pendingReviews.has(target.id))
       throw new ApiError(429, 'reviewInProgress')
     pendingReviews.add(target.id)
     try {
-      const result = await reviewWriting(task, row, target.work)
+      const result = await reviewWriting(
+        task,
+        target.requirements ?? row,
+        content
+      )
       const review = await db.transaction(async (tx) => {
+        const latest = await assignmentForWrite(tx, id, person)
         const [current] = await tx
           .select()
           .from(submission)
@@ -489,14 +550,16 @@ export async function writingRoutes(app: FastifyInstance) {
           .for('update')
         if (
           studentTask &&
-          (current?.version !== target.version || row.dueAt <= new Date())
+          (current?.status !== 'draft' ||
+            latest.archived ||
+            latest.dueAt <= new Date())
         )
-          throw new ApiError(409, 'versionConflict')
+          throw new ApiError(409, 'writingClosed')
         if (task === 'assessment' && current?.status !== 'submitted')
           throw new ApiError(409, 'gradeUnavailable')
         const [created] = await tx
           .insert(aiReview)
-          .values({ submissionId: target.id, task, result })
+          .values({ submissionId: target.id, task, result, source })
           .returning(reviewFields)
         return created
       })
@@ -512,8 +575,8 @@ export async function writingRoutes(app: FastifyInstance) {
       const student = await identity(request, 'student')
       const { id, reviewId, index } = read(reviewParams, request.params)
       const decision = read(decisionSchema, request.body)
-      const row = await accessibleAssignment(id, student)
       return db.transaction(async (tx) => {
+        const row = await assignmentForWrite(tx, id, student)
         const [own] = await tx
           .select()
           .from(submission)
@@ -522,7 +585,8 @@ export async function writingRoutes(app: FastifyInstance) {
         if (
           !own ||
           own.status !== 'draft' ||
-          own.stage !== 'revise' ||
+          (own.stage !== 'revise' && own.stage !== 'outline') ||
+          row.archived ||
           row.dueAt <= new Date()
         )
           throw new ApiError(409, 'writingClosed')
@@ -533,7 +597,7 @@ export async function writingRoutes(app: FastifyInstance) {
             and(
               eq(aiReview.id, reviewId),
               eq(aiReview.submissionId, own.id),
-              eq(aiReview.task, 'revision')
+              eq(aiReview.task, own.stage === 'revise' ? 'revision' : 'outline')
             )
           )
           .for('update')

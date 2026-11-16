@@ -5,6 +5,7 @@
 - 教师创建班级并分发邀请码，设置写作语言、截止时间、篇幅区间、检查清单和评分标准。
 - 学生加入班级后可随时继续未提交的稿件，切换简体中文或 English 界面。正文支持分节、粗体和斜体，初稿与修订稿分别保存。
 - 提交后稿件锁定。教师按评分项录入分数和评语，学生可查看已发布的成绩。
+- 教师可以维护班级名单、编辑和复制作业。学生从站内通知进入成绩与反馈，查看分项评语和正文批注。
 - 配置模型服务后，可使用提纲反馈、修改建议和按评分标准预评。学生能记录是否采纳修改建议及理由，教师决定最终分数。
 
 ## 本地运行
@@ -18,6 +19,8 @@ pnpm db:migrate
 ```
 
 学生在登录页自行注册。教师账号由项目维护者创建。运行 `pnpm teacher:create` 前，在当前终端设置 `TEACHER_NAME`、`TEACHER_EMAIL` 和 `TEACHER_PASSWORD` 环境变量（密码至少 10 字符）。可以按需创建多个教师账号，一个邮箱对应一个账号。
+
+升级已有首版数据库时，再运行一次 `pnpm db:migrate`。初始化管理工作台时，在本地终端设置 `ADMIN_NAME`、`ADMIN_EMAIL` 和 `ADMIN_PASSWORD` 环境变量（密码 10–128 字符），运行一次 `pnpm admin:create`。使用尚未注册的邮箱。之后由管理员在管理工作台维护账号、班级和作业。
 
 分别在两个终端启动服务。
 
@@ -33,7 +36,7 @@ pnpm dev --host localhost --port 5173 --strictPort
 
 ## AI 模型服务
 
-在 `.env.local` 中填入 `AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL` 后重启后端。选择支持 `/chat/completions` 和 `response_format: { type: "json_object" }` 的模型。基础 URL 通常以 `/v1` 结尾。
+在 `.env.local` 中设置 `AI_BASE_URL=https://api.deepseek.com`、`AI_MODEL=deepseek-flash`，再填写自己的 `AI_API_KEY` 并重启后端。也可以选择支持 `/chat/completions` 和 `response_format: { type: "json_object" }` 的其他模型服务。[DeepSeek 更新日志](https://api-docs.deepseek.com/updates/#deepseek-v41-flash-1017-update)
 
 用户主动请求反馈时，后端会将作业要求、评分项和对应的提纲或稿件内容发给所配置的模型服务。API 密钥只配置在后端。未配置时，师生可以照常写作、提交和人工批改。
 

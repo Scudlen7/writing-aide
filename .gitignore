@@ -14,6 +14,10 @@ dist-ssr
 
 .env
 
+# Local project references
+/docs/
+/AGENTS.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

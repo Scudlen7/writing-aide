@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { SettingsProfile } from '@/features/settings/profile'
+import { ProfileSettings } from '@/features/writing/settings'
 
 export const Route = createFileRoute('/_authenticated/settings/')({
-  component: SettingsProfile,
+  component: function ProfileRoute() {
+    return <ProfileSettings person={Route.useRouteContext().person} />
+  },
 })
