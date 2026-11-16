@@ -12,6 +12,20 @@ on:
 jobs:
   install-lint-build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: writing_aide
+          POSTGRES_PASSWORD: local-test
+          POSTGRES_DB: writing_aide_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U writing_aide -d writing_aide_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
 
     steps:
       - name: Checkout code
@@ -20,10 +34,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        run: npm install -g pnpm@12.8.1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -42,6 +56,14 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      - name: Test writing flow with PostgreSQL
+        env:
+          DATABASE_URL: postgresql://writing_aide:local-test@localhost:5432/writing_aide_test
+          TEST_DATABASE_URL: postgresql://writing_aide:local-test@localhost:5432/writing_aide_test
+        run: |
+          pnpm db:migrate
+          node --test server/course-flow.integration.ts
 
       - name: Build the project
         run: pnpm build

@@ -6,7 +6,7 @@ on:
 
 jobs:
   stale:
-
+    if: github.repository == 'satnaing/shadcn-admin'
     runs-on: ubuntu-latest
     permissions:
       issues: write

@@ -3,6 +3,11 @@
 
 # Except these files & folders
 !/src
+!/server
+!/shared
+!drizzle.config.ts
+!tsconfig.app.json
+!tsconfig.server.json
 !index.html
 !package.json
 !tailwind.config.js
@@ -17,3 +22,4 @@
 
 # Ignore auto generated routeTree.gen.ts
 /src/routeTree.gen.ts
+/server/migrations/

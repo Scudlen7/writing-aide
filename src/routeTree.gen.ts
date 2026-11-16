@@ -39,6 +39,8 @@ import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedAssignmentsAssignmentIdIndexRouteImport } from './routes/_authenticated/assignments/$assignmentId/index'
+import { Route as AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRouteImport } from './routes/_authenticated/assignments/$assignmentId/submissions/$submissionId'
 
 const ClerkRouteRoute = ClerkRouteRouteImport.update({
   id: '/clerk',
@@ -196,6 +198,20 @@ const AuthenticatedErrorsErrorRoute =
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAssignmentsAssignmentIdIndexRoute =
+  AuthenticatedAssignmentsAssignmentIdIndexRouteImport.update({
+    id: '/assignments/$assignmentId/',
+    path: '/assignments/$assignmentId/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute =
+  AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRouteImport.update(
+    {
+      id: '/assignments/$assignmentId/submissions/$submissionId',
+      path: '/assignments/$assignmentId/submissions/$submissionId',
+      getParentRoute: () => AuthenticatedRouteRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -225,6 +241,8 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
+  '/assignments/$assignmentId/': typeof AuthenticatedAssignmentsAssignmentIdIndexRoute
+  '/assignments/$assignmentId/submissions/$submissionId': typeof AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute
 }
 export interface FileRoutesByTo {
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
@@ -253,6 +271,8 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/assignments/$assignmentId': typeof AuthenticatedAssignmentsAssignmentIdIndexRoute
+  '/assignments/$assignmentId/submissions/$submissionId': typeof AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -286,6 +306,8 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
+  '/_authenticated/assignments/$assignmentId/': typeof AuthenticatedAssignmentsAssignmentIdIndexRoute
+  '/_authenticated/assignments/$assignmentId/submissions/$submissionId': typeof AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -317,6 +339,8 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/tasks/'
     | '/users/'
+    | '/assignments/$assignmentId/'
+    | '/assignments/$assignmentId/submissions/$submissionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/clerk'
@@ -345,6 +369,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tasks'
     | '/users'
+    | '/assignments/$assignmentId'
+    | '/assignments/$assignmentId/submissions/$submissionId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -377,6 +403,8 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
+    | '/_authenticated/assignments/$assignmentId/'
+    | '/_authenticated/assignments/$assignmentId/submissions/$submissionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -606,6 +634,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/assignments/$assignmentId/': {
+      id: '/_authenticated/assignments/$assignmentId/'
+      path: '/assignments/$assignmentId'
+      fullPath: '/assignments/$assignmentId/'
+      preLoaderRoute: typeof AuthenticatedAssignmentsAssignmentIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/assignments/$assignmentId/submissions/$submissionId': {
+      id: '/_authenticated/assignments/$assignmentId/submissions/$submissionId'
+      path: '/assignments/$assignmentId/submissions/$submissionId'
+      fullPath: '/assignments/$assignmentId/submissions/$submissionId'
+      preLoaderRoute: typeof AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -641,6 +683,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHelpCenterIndexRoute: typeof AuthenticatedHelpCenterIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
+  AuthenticatedAssignmentsAssignmentIdIndexRoute: typeof AuthenticatedAssignmentsAssignmentIdIndexRoute
+  AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute: typeof AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -652,6 +696,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHelpCenterIndexRoute: AuthenticatedHelpCenterIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
+  AuthenticatedAssignmentsAssignmentIdIndexRoute:
+    AuthenticatedAssignmentsAssignmentIdIndexRoute,
+  AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute:
+    AuthenticatedAssignmentsAssignmentIdSubmissionsSubmissionIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

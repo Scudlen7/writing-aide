@@ -1,119 +1,60 @@
-# Shadcn Admin Dashboard
+# 写作助教 · Writing Aide
 
-Admin Dashboard UI crafted with Shadcn and Vite. Built with responsiveness and accessibility in mind.
+面向高校课程论文的中英双语写作平台。教师发布作业并按评分标准批改，学生在目标设定、列提纲、起草、修改和反思五个阶段完成论文。
 
-![alt text](public/images/shadcn-admin.png)
+- 教师创建班级并分发邀请码，设置写作语言、截止时间、篇幅区间、检查清单和评分标准。
+- 学生加入班级后可随时继续未提交的稿件，切换简体中文或 English 界面。正文支持分节、粗体和斜体，初稿与修订稿分别保存。
+- 提交后稿件锁定。教师按评分项录入分数和评语，学生可查看已发布的成绩。
+- 配置模型服务后，可使用提纲反馈、修改建议和按评分标准预评。学生能记录是否采纳修改建议及理由，教师决定最终分数。
 
-[![Sponsored by Clerk](https://img.shields.io/badge/Sponsored%20by-Clerk-5b6ee1?logo=clerk)](https://go.clerk.com/GttUAaK)
+## 本地运行
 
-I've been creating dashboard UIs at work and for my personal projects. I always wanted to make a reusable collection of dashboard UI for future projects; and here it is now. While I've created a few custom components, some of the code is directly adapted from ShadcnUI examples.
+需要 Node.js 24、pnpm 12.8.1 和 PostgreSQL。先创建一个项目专用的空数据库和数据库用户，复制 `.env.example` 为 `.env.local`，填入数据库连接。运行以下命令生成一个独立的 `BETTER_AUTH_SECRET` 并填入配置文件。
 
-> This is not a starter project (template) though. I'll probably make one in the future.
-
-## Features
-
-- Light/dark mode
-- Responsive
-- Accessible
-- With built-in Sidebar component
-- Global search command
-- 10+ pages
-- Extra custom components
-- RTL support
-
-<details>
-<summary>Customized Components (click to expand)</summary>
-
-This project uses Shadcn UI components, but some have been slightly modified for better RTL (Right-to-Left) support and other improvements. These customized components differ from the original Shadcn UI versions.
-
-If you want to update components using the Shadcn CLI (e.g., `npx shadcn@latest add <component>`), it's generally safe for non-customized components. For the listed customized ones, you may need to manually merge changes to preserve the project's modifications and avoid overwriting RTL support or other updates.
-
-> If you don't require RTL support, you can safely update the 'RTL Updated Components' via the Shadcn CLI, as these changes are primarily for RTL compatibility. The 'Modified Components' may have other customizations to consider.
-
-### Modified Components
-
-- scroll-area
-- sonner
-- separator
-
-### RTL Updated Components
-
-- alert-dialog
-- calendar
-- command
-- dialog
-- dropdown-menu
-- select
-- table
-- sheet
-- sidebar
-- switch
-
-**Notes:**
-
-- **Modified Components**: These have general updates, potentially including RTL adjustments.
-- **RTL Updated Components**: These have specific changes for RTL language support (e.g., layout, positioning).
-- For implementation details, check the source files in `src/components/ui/`.
-- All other Shadcn UI components in the project are standard and can be safely updated via the CLI.
-
-</details>
-
-## Tech Stack
-
-**UI:** [ShadcnUI](https://ui.shadcn.com) (TailwindCSS + RadixUI)
-
-**Build Tool:** [Vite](https://vitejs.dev/)
-
-**Routing:** [TanStack Router](https://tanstack.com/router/latest)
-
-**Type Checking:** [TypeScript](https://www.typescriptlang.org/)
-
-**Linting/Formatting:** [ESLint](https://eslint.org/) & [Prettier](https://prettier.io/)
-
-**Icons:** [Lucide Icons](https://lucide.dev/icons/), [Tabler Icons](https://tabler.io/icons) (Brand icons only)
-
-**Auth (partial):** [Clerk](https://go.clerk.com/GttUAaK)
-
-## Run Locally
-
-Clone the project
-
-```bash
-  git clone https://github.com/satnaing/shadcn-admin.git
+```sh
+node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))"
+pnpm install --frozen-lockfile
+pnpm db:migrate
 ```
 
-Go to the project directory
+学生在登录页自行注册。教师账号由项目维护者创建。运行 `pnpm teacher:create` 前，在当前终端设置 `TEACHER_NAME`、`TEACHER_EMAIL` 和 `TEACHER_PASSWORD` 环境变量（密码至少 10 字符）。可以按需创建多个教师账号，一个邮箱对应一个账号。
 
-```bash
-  cd shadcn-admin
+分别在两个终端启动服务。
+
+```sh
+pnpm dev:api
 ```
 
-Install dependencies
-
-```bash
-  pnpm install
+```sh
+pnpm dev --host localhost --port 5173 --strictPort
 ```
 
-Start the server
+打开 [http://localhost:5173](http://localhost:5173)。教师登录后先创建班级，然后发布作业。学生输入邀请码后，可以在工作台看到该班级的作业。截止时间按浏览器所在时区输入和显示。
 
-```bash
-  pnpm run dev
+## AI 模型服务
+
+在 `.env.local` 中填入 `AI_BASE_URL`、`AI_API_KEY` 和 `AI_MODEL` 后重启后端。选择支持 `/chat/completions` 和 `response_format: { type: "json_object" }` 的模型。基础 URL 通常以 `/v1` 结尾。
+
+用户主动请求反馈时，后端会将作业要求、评分项和对应的提纲或稿件内容发给所配置的模型服务。API 密钥只配置在后端。未配置时，师生可以照常写作、提交和人工批改。
+
+## 构建与检查
+
+```sh
+pnpm lint
+pnpm format:check
+pnpm test:browser:install
+pnpm test
+pnpm build
 ```
 
-## Sponsoring this project ❤️
+写作流程集成测试使用独立的 PostgreSQL 测试库。将 `DATABASE_URL` 和 `TEST_DATABASE_URL` 指向同一个以 `_test` 结尾的数据库，运行 `pnpm db:migrate`，再运行 `node --test server/course-flow.integration.ts`。测试使用本地模拟模型服务。
 
-If you find this project helpful or use this in your own work, consider [sponsoring me](https://github.com/sponsors/satnaing) to support development and maintenance. You can [buy me a coffee](https://buymeacoffee.com/satnaing) as well. Don’t worry, every penny helps. Thank you! 🙏
+部署时，将 `APP_ORIGIN` 设为应用的公开 HTTPS 地址，将 `NODE_ENV` 设为 `production`，运行数据库迁移后执行 `pnpm start`。Fastify 在同一个域名下提供 `dist/` 前端和 API。默认绑定 `127.0.0.1:3001`，可通过 `HOST` 和 `PORT` 配置。
 
-For questions or sponsorship inquiries, feel free to reach out at [satnaingdev@gmail.com](mailto:satnaingdev@gmail.com).
+前端基于 React、Vite、TanStack Router、Shadcn UI、Tiptap 和 react-i18next。后端使用 Fastify、Better Auth、Drizzle ORM 和 PostgreSQL。
 
-### Current Sponsor
+## 致谢 · Credits
 
-- [Clerk](https://go.clerk.com/GttUAaK) - authentication and user management for the modern web
+感谢 **Sat Naing（[@satnaing](https://github.com/satnaing)）** 开源 [Shadcn Admin](https://github.com/satnaing/shadcn-admin)。本项目在该模板的界面组件与布局基础上开发，保留了原作者的版权声明和 MIT 许可证。
 
-## Author
-
-Crafted with 🤍 by [@satnaing](https://github.com/satnaing)
-
-## License
-
-Licensed under the [MIT License](https://choosealicense.com/licenses/mit/)
+Thanks to **Sat Naing** for creating and open-sourcing Shadcn Admin, the frontend template used by Writing Aide. See [LICENSE](LICENSE).

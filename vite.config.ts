@@ -19,6 +19,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@writing': path.resolve(__dirname, './shared'),
+    },
+  },
+  server: {
+    proxy: {
+      '/api': 'http://127.0.0.1:3001',
     },
   },
   test: {
