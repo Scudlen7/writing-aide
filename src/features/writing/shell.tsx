@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router'
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useMatch,
+  useRouter,
+} from '@tanstack/react-router'
 import type { Identity } from '@writing/writing'
 import {
   Bell,
@@ -47,6 +53,64 @@ import { LanguageSwitch, Problem, WritingThemeSwitch } from './ui'
 
 export function WritingShell({ person }: { person: Identity }) {
   const { t } = useTranslation()
+  const assignment = useMatch({
+    from: '/_authenticated/assignments/$assignmentId/',
+    shouldThrow: false,
+  })
+
+  if (person.role === 'student' && assignment) {
+    return (
+      <div className='writing-app flex min-h-dvh flex-col bg-background lg:h-dvh lg:min-h-[36rem]'>
+        <SkipToMain />
+        <WritingHeader
+          title={t('writingWorkspace')}
+          showSidebarTrigger={false}
+        />
+        <Outlet />
+      </div>
+    )
+  }
+
+  return <CourseShell person={person} />
+}
+
+function SkipToMain() {
+  const { t } = useTranslation()
+  return (
+    <a
+      className='sr-only focus:not-sr-only focus:absolute focus:z-60 focus:bg-background focus:p-2'
+      href='#writing-main'
+    >
+      {t('skipToMain')}
+    </a>
+  )
+}
+
+function WritingHeader({
+  title,
+  showSidebarTrigger,
+}: {
+  title: string
+  showSidebarTrigger?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <Header
+      className='shrink-0 border-b bg-card'
+      triggerLabel={t('toggleSidebar')}
+      showSidebarTrigger={showSidebarTrigger}
+    >
+      <span className='hidden font-medium sm:inline'>{title}</span>
+      <div className='ms-auto flex items-center gap-1 sm:gap-2'>
+        <LanguageSwitch />
+        <WritingThemeSwitch />
+      </div>
+    </Header>
+  )
+}
+
+function CourseShell({ person }: { person: Identity }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const queries = useQueryClient()
   const pathname = useLocation({ select: (location) => location.pathname })
@@ -92,12 +156,7 @@ export function WritingShell({ person }: { person: Identity }) {
   return (
     <SidebarProvider className='writing-app'>
       <CloseSidebarOnNavigation pathname={pathname} />
-      <a
-        className='sr-only focus:not-sr-only focus:absolute focus:z-60 focus:bg-background focus:p-2'
-        href='#writing-main'
-      >
-        {t('skipToMain')}
-      </a>
+      <SkipToMain />
       <Sidebar collapsible='icon' className='border-r'>
         <SidebarHeader className='px-3 py-5'>
           <SidebarMenu>
@@ -159,15 +218,9 @@ export function WritingShell({ person }: { person: Identity }) {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className='@container/content min-w-0 bg-background'>
-        <Header className='border-b bg-card' triggerLabel={t('toggleSidebar')}>
-          <span className='hidden font-medium sm:inline'>
-            {t(pathname.replace(/\/$/, '') === '/chats' ? 'chats' : home)}
-          </span>
-          <div className='ms-auto flex items-center gap-1 sm:gap-2'>
-            <LanguageSwitch />
-            <WritingThemeSwitch />
-          </div>
-        </Header>
+        <WritingHeader
+          title={t(pathname.replace(/\/$/, '') === '/chats' ? 'chats' : home)}
+        />
         {error != null && (
           <div className='mx-auto mt-4 w-full max-w-6xl px-4'>
             <Problem error={error} />

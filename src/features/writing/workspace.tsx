@@ -38,6 +38,11 @@ import { Field, Problem, Requirements } from './ui'
 
 type Action = 'save' | 'advance' | 'submit' | 'navigate'
 
+const writingColumns =
+  'grid min-h-0 gap-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(21rem,32vw,40rem)] lg:grid-rows-[minmax(0,1fr)]'
+const writingPane =
+  'min-w-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain'
+
 function StageTrack({
   stage,
   opened,
@@ -58,7 +63,7 @@ function StageTrack({
   const openedIndex = stages.indexOf(opened)
   return (
     <ol
-      className='grid grid-cols-5 gap-1 rounded-xl border bg-card p-2 sm:gap-2 sm:p-3'
+      className='grid shrink-0 grid-cols-5 gap-1 rounded-xl border bg-card p-2 sm:gap-2 sm:p-3'
       aria-label={t('writingStages')}
     >
       {stages.map((step, index) => {
@@ -147,7 +152,7 @@ export function Workspace({
   }
 
   return (
-    <div className='space-y-5'>
+    <div className='flex min-h-0 flex-1 flex-col gap-4'>
       {submitted || closed ? (
         <>
           <StageTrack
@@ -156,8 +161,12 @@ export function Workspace({
             work={current?.work ?? emptyWork}
             locked
           />
-          <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
-            <div className='space-y-4'>
+          <div className={writingColumns}>
+            <section
+              aria-label={t('writingArea')}
+              tabIndex={0}
+              className={cn('space-y-4', writingPane)}
+            >
               <section
                 id='grade-feedback'
                 tabIndex={-1}
@@ -186,8 +195,12 @@ export function Workspace({
                   anchors={Boolean(current.grade)}
                 />
               )}
-            </div>
-            <aside className='space-y-3'>
+            </section>
+            <aside
+              aria-label={t('writingReferences')}
+              tabIndex={0}
+              className={cn('space-y-3', writingPane)}
+            >
               <Requirements assignment={assignment} />
               <ReviewPanel
                 reviews={allReviews.filter(
@@ -369,8 +382,15 @@ function StageEditor({
         pending={pending || reviewing}
         go={(step) => void persist('navigate', step)}
       />
-      <div className='grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
-        <section className='min-w-0 space-y-5 rounded-xl border bg-card p-4 sm:p-6'>
+      <div className={writingColumns}>
+        <section
+          aria-label={t('writingArea')}
+          tabIndex={0}
+          className={cn(
+            'space-y-5 rounded-xl border bg-card p-4 sm:p-6',
+            writingPane
+          )}
+        >
           <div>
             <h2 className='text-xl font-semibold tracking-tight'>
               {t(`stage.${stage}`)}
@@ -586,7 +606,11 @@ function StageEditor({
             </div>
           </div>
         </section>
-        <aside className='space-y-3'>
+        <aside
+          aria-label={t('writingReferences')}
+          tabIndex={0}
+          className={cn('space-y-3', writingPane)}
+        >
           <Requirements assignment={assignment} open={stage === 'goals'} />
           {stage !== 'goals' && work.outline.trim() && stage !== 'outline' && (
             <details className='rounded-xl border bg-card p-4'>

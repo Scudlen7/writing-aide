@@ -6,6 +6,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
   fixed?: boolean
   triggerLabel?: string
+  showSidebarTrigger?: boolean
   ref?: React.Ref<HTMLElement>
 }
 
@@ -13,6 +14,7 @@ export function Header({
   className,
   fixed,
   triggerLabel,
+  showSidebarTrigger = true,
   children,
   ...props
 }: HeaderProps) {
@@ -48,12 +50,16 @@ export function Header({
             'after:absolute after:inset-0 after:-z-10 after:bg-background/20 after:backdrop-blur-lg'
         )}
       >
-        <SidebarTrigger
-          variant='outline'
-          className='max-md:scale-125'
-          aria-label={triggerLabel}
-        />
-        <Separator orientation='vertical' className='h-6' />
+        {showSidebarTrigger && (
+          <>
+            <SidebarTrigger
+              variant='outline'
+              className='max-md:scale-125'
+              aria-label={triggerLabel}
+            />
+            <Separator orientation='vertical' className='h-6' />
+          </>
+        )}
         {children}
       </div>
     </header>

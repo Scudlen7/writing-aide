@@ -3,6 +3,7 @@ import { Link, useRouter } from '@tanstack/react-router'
 import type { Assignment, Identity } from '@writing/writing'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Main } from '@/components/layout/main'
 import { dashboardOptions, type AssignmentDetail } from './api'
@@ -70,11 +71,18 @@ export function AssignmentPage({
 }) {
   const { t } = useTranslation()
   const { assignment } = detail
+  const student = person.role === 'student'
   return (
     <Main
       id='writing-main'
       fluid
-      className='mx-auto w-full max-w-6xl space-y-6 px-4 py-7 sm:px-8'
+      tabIndex={student ? -1 : undefined}
+      className={cn(
+        'w-full px-4',
+        student
+          ? 'flex min-h-0 flex-1 flex-col gap-4 py-4 sm:px-6 lg:overflow-hidden'
+          : 'mx-auto max-w-6xl space-y-6 py-7 sm:px-8'
+      )}
     >
       <AssignmentHeading assignment={assignment} />
       {'submissions' in detail && (
