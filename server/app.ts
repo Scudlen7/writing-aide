@@ -7,6 +7,7 @@ import { chatRoutes } from './chat.ts'
 import { config } from './config.ts'
 import { ApiError } from './errors.ts'
 import { managementRoutes } from './management.ts'
+import { peerRoutes } from './peer.ts'
 import { settingsRoutes } from './settings.ts'
 import { writingRoutes } from './writing.ts'
 
@@ -75,6 +76,7 @@ export function createApp(
   })
 
   app.register(writingRoutes)
+  app.register(peerRoutes)
   app.register(chatRoutes)
   app.register(managementRoutes)
   app.register(settingsRoutes)

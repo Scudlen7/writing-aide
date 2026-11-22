@@ -85,7 +85,11 @@ export function NotificationsPage({ person }: { person: Identity }) {
                           to='/assignments/$assignmentId'
                           params={{ assignmentId: item.assignmentId }}
                           hash={
-                            item.kind === 'grade' ? 'grade-feedback' : undefined
+                            item.kind === 'grade'
+                              ? 'grade-feedback'
+                              : item.kind === 'returned'
+                                ? 'returned-paper'
+                                : undefined
                           }
                           onClick={onOpen}
                         >

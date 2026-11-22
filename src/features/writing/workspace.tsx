@@ -2,17 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBlocker } from '@tanstack/react-router'
 import {
   countWriting,
+  aiAllowed,
+  citedSources,
   blockText,
+  documentText,
   emptyWork,
   incompleteBefore,
+  personalGoalItems,
   stageComplete,
   stages,
+  writingFocuses,
   type AiReview,
   type AiTask,
   type Assignment,
+  type ReturnedPaper,
   type Stage,
   type Submission,
   type Work,
+  type WritingFocus,
 } from '@writing/writing'
 import { ArrowRight, Check, ChevronLeft } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -29,12 +36,25 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { request, RequestError } from './api'
-import { PaperEditor, PaperText } from './editor'
+import {
+  PaperEditor,
+  PaperText,
+  type CitationInput,
+  type TextLocation,
+} from './editor'
+import { PeerPanel } from './peer'
+import { ReferencesPanel } from './references'
 import { ReviewPanel } from './reviews'
-import { Field, Problem, Requirements } from './ui'
+import { Deadline, Field, Problem, Requirements } from './ui'
+import {
+  AiDeclaration,
+  PersonalGoalsEditor,
+  WritingProcess,
+} from './writing-process'
 
 type Action = 'save' | 'advance' | 'submit' | 'navigate'
 
@@ -127,21 +147,35 @@ export function Workspace({
   assignment,
   submission,
   reviews,
+  previousReviews = [],
+  personId,
   aiEnabled,
 }: {
   assignment: Assignment
   submission: Submission | null
   reviews: AiReview[]
+  previousReviews?: AiReview[]
+  personId?: string
   aiEnabled: boolean
 }) {
   const { t } = useTranslation()
   const [current, setCurrent] = useState(submission)
   const [allReviews, setReviews] = useState(reviews)
   const [openedAt] = useState(Date.now)
+  const [focusRevision, setFocusRevision] = useState(false)
   const stage = current?.stage ?? 'goals'
   const closed =
     assignment.archived || new Date(assignment.dueAt).getTime() <= openedAt
   const submitted = current && current.status !== 'draft'
+
+  const acceptSave = useCallback(
+    (saved: Submission) => {
+      if (saved.stage !== stage)
+        setFocusRevision(stage === 'reflect' && saved.stage === 'revise')
+      setCurrent(saved)
+    },
+    [stage]
+  )
 
   function upsertReview(next: AiReview) {
     setReviews((previous) =>
@@ -189,10 +223,27 @@ export function Workspace({
                   </p>
                 )}
               </section>
+              {current?.grade && <RevisionRecap work={current.work} />}
               {current && (
-                <WrittenWork
-                  work={current.work}
-                  anchors={Boolean(current.grade)}
+                <>
+                  <Button asChild variant='outline' size='sm'>
+                    <a href={`/api/assignments/${assignment.id}/export`}>
+                      {t(submitted ? 'exportSubmitted' : 'exportDraft')}
+                    </a>
+                  </Button>
+                  <WrittenWork
+                    work={current.work}
+                    anchors={Boolean(current.grade)}
+                    reviews={allReviews}
+                  />
+                </>
+              )}
+              {current?.returned && (
+                <PriorSubmission
+                  assignment={assignment}
+                  returned={current.returned}
+                  exportHref={`/api/assignments/${assignment.id}/export?previous=1`}
+                  reviews={previousReviews}
                 />
               )}
             </section>
@@ -202,6 +253,9 @@ export function Workspace({
               className={cn('space-y-3', writingPane)}
             >
               <Requirements assignment={assignment} />
+              {personId && (
+                <PeerPanel assignmentId={assignment.id} personId={personId} />
+              )}
               <ReviewPanel
                 reviews={allReviews.filter(
                   (item) =>
@@ -218,7 +272,10 @@ export function Workspace({
           assignment={assignment}
           stage={stage}
           submission={current}
-          onSaved={setCurrent}
+          onSaved={acceptSave}
+          focusRevision={focusRevision}
+          previousReviews={previousReviews}
+          personId={personId}
           reviews={allReviews}
           aiEnabled={aiEnabled}
           onReviewSaved={upsertReview}
@@ -231,19 +288,35 @@ export function Workspace({
 function stageFields(stage: Stage, work: Work): Partial<Work> {
   switch (stage) {
     case 'goals':
-      return { goal: work.goal, aiGoal: work.aiGoal }
+      return {
+        goal: work.goal,
+        aiGoal: work.aiGoal,
+        personalGoals: work.personalGoals,
+      }
     case 'outline':
       return { outline: work.outline }
     case 'draft':
-      return { title: work.title, draft: work.draft, checked: work.checked }
+      return {
+        title: work.title,
+        draft: work.draft,
+        checked: work.checked,
+        completedGoals: work.completedGoals,
+        sources: work.sources,
+      }
     case 'revise':
       return {
         revisionTitle: work.revisionTitle ?? work.title,
         revision: work.revision,
         checked: work.checked,
+        completedGoals: work.completedGoals,
+        sources: work.sources,
       }
     case 'reflect':
-      return { reflection: work.reflection }
+      return {
+        reflection: work.reflection,
+        aiDeclaration: work.aiDeclaration,
+        completedGoals: work.completedGoals,
+      }
   }
 }
 
@@ -252,6 +325,9 @@ function StageEditor({
   stage,
   submission,
   onSaved,
+  focusRevision,
+  previousReviews,
+  personId,
   reviews,
   aiEnabled,
   onReviewSaved,
@@ -260,6 +336,9 @@ function StageEditor({
   stage: Stage
   submission: Submission | null
   onSaved: (submission: Submission) => void
+  focusRevision: boolean
+  previousReviews: AiReview[]
+  personId?: string
   reviews: AiReview[]
   aiEnabled: boolean
   onReviewSaved: (review: AiReview) => void
@@ -278,7 +357,24 @@ function StageEditor({
     text: string
   } | null>(null)
   const busy = useRef(false)
+  const reflectionField = useRef<HTMLTextAreaElement>(null)
+  const coachPanel = useRef<HTMLDetailsElement>(null)
+  const [reflectionPrompt, setReflectionPrompt] = useState('')
+  const [focus, setFocus] = useState<WritingFocus>('argument')
+  const [includeGoals, setIncludeGoals] = useState(false)
+  const [location, setLocation] = useState<TextLocation>()
+  const [insertion, setInsertion] = useState<CitationInput>()
   const dirty = JSON.stringify(fields) !== savedFields
+  const blocked =
+    error instanceof RequestError &&
+    ['versionConflict', 'writingClosed'].includes(error.code)
+  const reflectionComplete = Boolean(fields.reflection?.trim())
+  const declaration = fields.aiDeclaration
+  const declarationComplete =
+    !assignment.aiPolicy ||
+    Boolean(
+      declaration && (!declaration.used || declaration.description.trim())
+    )
   const version = submission?.version ?? 0
   const stageDoc = fields.draft ?? fields.revision ?? work.revision
   const count = countWriting(stageDoc, assignment.language)
@@ -295,6 +391,13 @@ function StageEditor({
     stageDoc.content[selected.block]?.type === 'paragraph' &&
     selected.text === blockText(stageDoc.content[selected.block])
   const stepIndex = stages.indexOf(stage)
+  const editedWork = { ...work, ...fields }
+
+  function openCoach() {
+    if (!coachPanel.current) return
+    coachPanel.current.open = true
+    coachPanel.current.querySelector('summary')?.focus()
+  }
 
   useBlocker({
     shouldBlockFn: ({ current, next }) =>
@@ -307,7 +410,7 @@ function StageEditor({
 
   const persist = useCallback(
     async (action: Action, target?: Stage) => {
-      if (busy.current) return false
+      if (busy.current || blocked) return false
       if (action === 'save' && !dirty) return version
       busy.current = true
       setPending(true)
@@ -335,7 +438,7 @@ function StageEditor({
         setPending(false)
       }
     },
-    [assignment.id, dirty, fields, stage, version, onSaved]
+    [assignment.id, blocked, dirty, fields, stage, version, onSaved]
   )
 
   useEffect(() => {
@@ -345,7 +448,7 @@ function StageEditor({
   }, [dirty, pending, error, persist])
 
   function update(change: Partial<Work>) {
-    if (error instanceof RequestError && error.code === 'versionConflict') {
+    if (blocked) {
       setFields((previous) => ({ ...previous, ...change }))
       return
     }
@@ -365,6 +468,8 @@ function StageEditor({
           task,
           version: savedVersion,
           block: task === 'revision' ? selected?.block : undefined,
+          focus,
+          includeGoals,
         }
       )
       onReviewSaved(result)
@@ -378,6 +483,8 @@ function StageEditor({
   const taskReviews = reviews.filter((item) =>
     reviewTask ? item.task === reviewTask : true
   )
+  const coachAllowed =
+    reviewTask && aiAllowed(assignment, reviewTask) ? reviewTask : null
 
   return (
     <>
@@ -385,7 +492,7 @@ function StageEditor({
         stage={stage}
         opened={submission?.openedStage ?? stage}
         work={{ ...work, ...fields }}
-        pending={pending || reviewing}
+        pending={pending || reviewing || blocked}
         go={(step) => void persist('navigate', step)}
       />
       <div className={writingColumns}>
@@ -405,36 +512,42 @@ function StageEditor({
               {t(`stageHelp.${stage}`)}
             </p>
           </div>
+          {submission?.returned && (
+            <PriorSubmission
+              assignment={assignment}
+              returned={submission.returned}
+              exportHref={`/api/assignments/${assignment.id}/export?previous=1`}
+              reviews={previousReviews}
+            />
+          )}
           {stage === 'goals' && (
-            <>
-              <Field label={t('goal')}>
-                <Textarea
-                  value={fields.goal}
-                  rows={5}
-                  maxLength={4000}
-                  onChange={(event) => update({ goal: event.target.value })}
-                />
-              </Field>
-              <Field label={t('aiGoal')}>
-                <Textarea
-                  value={fields.aiGoal}
-                  rows={3}
-                  maxLength={4000}
-                  onChange={(event) => update({ aiGoal: event.target.value })}
-                />
-              </Field>
-            </>
+            <PersonalGoalsEditor
+              work={editedWork}
+              onChange={(personalGoals) => update({ personalGoals })}
+            />
           )}
           {stage === 'outline' && (
-            <Field label={t('outline')}>
-              <Textarea
-                value={fields.outline}
-                rows={16}
-                className='min-h-64 resize-y sm:min-h-96'
-                maxLength={12000}
-                onChange={(event) => update({ outline: event.target.value })}
-              />
-            </Field>
+            <div className='space-y-2'>
+              <Field label={t('outline')}>
+                <Textarea
+                  value={fields.outline}
+                  rows={16}
+                  className='min-h-64 resize-y sm:min-h-96'
+                  maxLength={12000}
+                  onChange={(event) => update({ outline: event.target.value })}
+                />
+              </Field>
+              {coachAllowed && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={openCoach}
+                >
+                  {t('openCoach')}
+                </Button>
+              )}
+            </div>
           )}
           {hasDoc && (
             <>
@@ -467,6 +580,10 @@ function StageEditor({
                 </div>
                 <PaperEditor
                   value={stageDoc}
+                  autofocus={stage === 'revise' && focusRevision}
+                  location={location}
+                  sources={editedWork.sources}
+                  insertion={insertion}
                   onChange={(doc) =>
                     update(
                       stage === 'draft' ? { draft: doc } : { revision: doc }
@@ -480,6 +597,7 @@ function StageEditor({
                               block,
                               text: blockText(stageDoc.content[block]),
                             })
+                          if (coachAllowed) openCoach()
                         }
                       : undefined
                   }
@@ -491,7 +609,7 @@ function StageEditor({
                     {t('viewDraft')}
                   </summary>
                   <p className='mt-2 font-medium'>{work.title}</p>
-                  <PaperText doc={work.draft} />
+                  <PaperText doc={work.draft} sources={work.sources} />
                 </details>
               )}
               {assignment.checklist.length > 0 && (
@@ -528,8 +646,14 @@ function StageEditor({
           )}
           {stage === 'reflect' && (
             <>
+              {reflectionPrompt && (
+                <p className='rounded-md bg-muted p-2 text-sm wrap-break-word whitespace-pre-wrap'>
+                  {t('reflectionPrompt')} · {reflectionPrompt}
+                </p>
+              )}
               <Field label={t('reflection')}>
                 <Textarea
+                  ref={reflectionField}
                   value={fields.reflection}
                   rows={6}
                   maxLength={8000}
@@ -538,11 +662,17 @@ function StageEditor({
                   }
                 />
               </Field>
+              {assignment.aiPolicy && (
+                <AiDeclaration
+                  value={declaration}
+                  onChange={(aiDeclaration) => update({ aiDeclaration })}
+                />
+              )}
               <details className='rounded-lg border p-3'>
                 <summary className='cursor-pointer text-sm font-medium'>
                   {t('finalDraft')}
                 </summary>
-                <PaperText doc={work.revision} />
+                <PaperText doc={work.revision} sources={work.sources} />
               </details>
               <div className='space-y-1 text-sm tabular-nums'>
                 <div className='flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground'>
@@ -567,23 +697,75 @@ function StageEditor({
                     })}
                   </p>
                 )}
+                {reflectionComplete ? (
+                  <p className='text-muted-foreground'>
+                    {t('reflectionComplete')}
+                  </p>
+                ) : (
+                  <Button
+                    type='button'
+                    variant='link'
+                    className='h-auto p-0'
+                    onClick={() => reflectionField.current?.focus()}
+                  >
+                    {t('completeReflection')}
+                  </Button>
+                )}
               </div>
             </>
           )}
           <Problem error={error} />
+          {dirty && Boolean(error) && (
+            <details className='rounded-lg border p-3'>
+              <summary className='cursor-pointer text-sm font-medium'>
+                {t('copyUnsaved')}
+              </summary>
+              <Textarea
+                aria-label={t('unsavedText')}
+                className='mt-2'
+                readOnly
+                rows={4}
+                value={[
+                  fields.goal,
+                  fields.aiGoal,
+                  ...(fields.personalGoals
+                    ? personalGoalItems(editedWork).map((goal) => goal.text)
+                    : []),
+                  fields.outline,
+                  fields.revisionTitle ?? fields.title,
+                  hasDoc ? documentText(stageDoc) : undefined,
+                  fields.reflection,
+                  fields.aiDeclaration?.description,
+                ]
+                  .filter(Boolean)
+                  .join('\n\n')}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </details>
+          )}
           <div className='flex flex-wrap items-center justify-between gap-3 border-t pt-4'>
             <div className='flex flex-wrap items-center gap-2'>
               <Button
                 type='button'
                 variant='outline'
                 size='sm'
-                disabled={pending || !dirty || reviewing}
+                disabled={pending || !dirty || reviewing || blocked}
                 onClick={() => void persist('save')}
               >
-                {t('save')}
+                {t(error && !blocked ? 'retrySave' : 'save')}
               </Button>
               <span className='text-xs text-muted-foreground' role='status'>
-                {t(pending ? 'saving' : dirty ? 'unsaved' : 'saved')}
+                {t(
+                  pending
+                    ? 'saving'
+                    : error
+                      ? 'saveFailed'
+                      : dirty
+                        ? 'waitingToSave'
+                        : submission
+                          ? 'saved'
+                          : 'notStarted'
+                )}
               </span>
             </div>
             <div className='flex flex-wrap gap-2'>
@@ -592,7 +774,7 @@ function StageEditor({
                   type='button'
                   variant='ghost'
                   size='sm'
-                  disabled={pending || reviewing}
+                  disabled={pending || reviewing || blocked}
                   onClick={() =>
                     void persist('navigate', stages[stepIndex - 1])
                   }
@@ -606,7 +788,14 @@ function StageEditor({
                   <AlertDialogTrigger asChild>
                     <Button
                       type='button'
-                      disabled={pending || reviewing || lengthOutsideRange}
+                      disabled={
+                        pending ||
+                        reviewing ||
+                        blocked ||
+                        lengthOutsideRange ||
+                        !reflectionComplete ||
+                        !declarationComplete
+                      }
                     >
                       {t('submit')}
                     </Button>
@@ -629,7 +818,7 @@ function StageEditor({
               ) : (
                 <Button
                   type='button'
-                  disabled={pending || reviewing}
+                  disabled={pending || reviewing || blocked}
                   onClick={() => void persist('advance')}
                 >
                   {t('next')}
@@ -645,6 +834,45 @@ function StageEditor({
           className={cn('space-y-3', writingPane)}
         >
           <Requirements assignment={assignment} open={stage === 'goals'} />
+          {personId && (
+            <PeerPanel assignmentId={assignment.id} personId={personId} />
+          )}
+          {submission && (
+            <Button asChild variant='outline' size='sm'>
+              <a href={`/api/assignments/${assignment.id}/export`}>
+                {t('exportDraft')}
+              </a>
+            </Button>
+          )}
+          {hasDoc && (
+            <ReferencesPanel
+              assignmentId={assignment.id}
+              sources={editedWork.sources ?? []}
+              cited={
+                new Set([
+                  ...citedSources(editedWork.draft),
+                  ...citedSources(editedWork.revision),
+                ])
+              }
+              onChange={(sources) => update({ sources })}
+              onInsert={setInsertion}
+            />
+          )}
+          {(hasDoc || stage === 'reflect') && (
+            <WritingProcess
+              work={editedWork}
+              reviews={taskReviews}
+              onCheck={(completedGoals) => update({ completedGoals })}
+              onReflect={
+                stage === 'reflect'
+                  ? (prompt) => {
+                      setReflectionPrompt(prompt)
+                      reflectionField.current?.focus()
+                    }
+                  : undefined
+              }
+            />
+          )}
           {stage !== 'goals' && work.outline.trim() && stage !== 'outline' && (
             <details className='rounded-xl border bg-card p-4'>
               <summary className='cursor-pointer text-sm font-semibold'>
@@ -656,10 +884,14 @@ function StageEditor({
             </details>
           )}
           <ReviewPanel
+            panelRef={coachPanel}
             reviews={taskReviews}
             enabled={aiEnabled}
             disabled={
-              pending || reviewing || (stage === 'revise' && !selectionValid)
+              pending ||
+              reviewing ||
+              blocked ||
+              (stage === 'revise' && !selectionValid)
             }
             selected={
               stage === 'revise'
@@ -668,9 +900,40 @@ function StageEditor({
                   : ''
                 : undefined
             }
-            work={{ ...work, ...fields }}
+            work={editedWork}
             label={reviewTask === 'outline' ? 'aiOutline' : 'aiRevision'}
-            onReview={reviewTask ? () => generate(reviewTask) : undefined}
+            onReview={coachAllowed ? () => generate(coachAllowed) : undefined}
+            onLocate={stage === 'revise' ? setLocation : undefined}
+            options={
+              coachAllowed && (
+                <div className='space-y-2'>
+                  <Field label={t('feedbackFocus')}>
+                    <select
+                      className='h-8 rounded-md border border-input bg-background px-2'
+                      value={focus}
+                      onChange={(event) =>
+                        setFocus(event.target.value as WritingFocus)
+                      }
+                    >
+                      {writingFocuses.map((item) => (
+                        <option key={item} value={item}>
+                          {t(`focus.${item}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <label className='flex items-center gap-2'>
+                    <Checkbox
+                      checked={includeGoals}
+                      onCheckedChange={(value) =>
+                        setIncludeGoals(value === true)
+                      }
+                    />
+                    {t('includeGoals')}
+                  </label>
+                </div>
+              )
+            }
             decisions={
               stage === 'revise' || stage === 'outline'
                 ? { assignmentId: assignment.id, onSaved: onReviewSaved }
@@ -728,6 +991,14 @@ export function GradeResult({
       <p className='text-sm wrap-break-word whitespace-pre-wrap'>
         {grade.feedback}
       </p>
+      {grade.nextStep && (
+        <>
+          <h3 className='text-sm font-semibold'>{t('nextWritingStep')}</h3>
+          <p className='text-sm wrap-break-word whitespace-pre-wrap'>
+            {grade.nextStep}
+          </p>
+        </>
+      )}
       {Boolean(grade.annotations?.length) && (
         <div className='space-y-2'>
           <h3 className='text-sm font-semibold'>{t('annotations')}</h3>
@@ -753,12 +1024,132 @@ export function GradeResult({
   )
 }
 
+function RevisionRecap({ work }: { work: Work }) {
+  const { t } = useTranslation()
+  const counts = new Map<string, number>()
+  for (const block of work.draft.content) {
+    const text = blockText(block).trim()
+    if (text) counts.set(text, (counts.get(text) ?? 0) + 1)
+  }
+  const changes = work.revision.content.flatMap((block, index) => {
+    const text = blockText(block).trim()
+    if (!text) return []
+    const matching = counts.get(text) ?? 0
+    if (matching) {
+      counts.set(text, matching - 1)
+      return []
+    }
+    return [
+      {
+        index,
+        before:
+          work.draft.content[index] &&
+          blockText(work.draft.content[index]).trim(),
+        text,
+      },
+    ]
+  })
+  return (
+    <details className='space-y-3 rounded-xl border bg-card p-4 text-sm'>
+      <summary className='cursor-pointer font-semibold'>
+        {t('revisionRecap')}
+      </summary>
+      {changes.length ? (
+        <ul className='space-y-2'>
+          {changes.slice(0, 4).map((change) => (
+            <li
+              key={change.index}
+              className='grid gap-2 rounded-md border p-3 sm:grid-cols-2'
+            >
+              <div>
+                <p className='font-medium'>{t('initialDraft')}</p>
+                <p className='line-clamp-4 wrap-break-word whitespace-pre-wrap'>
+                  {change.before || '—'}
+                </p>
+              </div>
+              <div className='rounded bg-primary/10 p-2'>
+                <a
+                  className='font-medium text-primary underline'
+                  href={`#paper-paragraph-${change.index}`}
+                >
+                  {t('finalDraft')}
+                </a>
+                <p className='line-clamp-4 wrap-break-word whitespace-pre-wrap'>
+                  {change.text}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className='text-muted-foreground'>{t('noChangedParagraphs')}</p>
+      )}
+      <details className='space-y-2'>
+        <summary className='cursor-pointer font-medium'>
+          {t('compareFullPapers')}
+        </summary>
+        <div className='grid gap-3 md:grid-cols-2'>
+          <section className='min-w-0'>
+            <h3 className='font-semibold'>{t('initialDraft')}</h3>
+            <PaperText doc={work.draft} sources={work.sources} />
+          </section>
+          <section className='min-w-0'>
+            <h3 className='font-semibold'>{t('finalDraft')}</h3>
+            <PaperText doc={work.revision} sources={work.sources} />
+          </section>
+        </div>
+      </details>
+    </details>
+  )
+}
+
+export function PriorSubmission({
+  assignment,
+  returned,
+  reviews = [],
+  exportHref,
+}: {
+  assignment: Assignment
+  returned: ReturnedPaper
+  reviews?: AiReview[]
+  exportHref?: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <section
+      id='returned-paper'
+      aria-label={t('returnedPaper')}
+      className='space-y-2 rounded-lg border bg-card p-4 text-sm'
+    >
+      <h3 className='font-semibold'>{t('returnedPaper')}</h3>
+      <p className='wrap-break-word whitespace-pre-wrap'>{returned.reason}</p>
+      <Deadline dueAt={returned.dueAt} />
+      <details className='space-y-3'>
+        <summary className='cursor-pointer font-medium'>
+          {t('priorPaper')}
+        </summary>
+        {exportHref && (
+          <Button asChild variant='outline' size='sm'>
+            <a href={exportHref}>{t('exportSubmitted')}</a>
+          </Button>
+        )}
+        <WrittenWork work={returned.work} reviews={reviews} />
+        <Requirements
+          assignment={{ ...assignment, ...returned.requirements }}
+        />
+      </details>
+    </section>
+  )
+}
+
 export function WrittenWork({
   work,
   anchors = false,
+  reviews,
 }: {
   work: Work
   anchors?: boolean
+  reviews?: AiReview[]
 }) {
   const { t } = useTranslation()
   const finalDoc = work.revision.content.some((item) => item.content?.length)
@@ -774,19 +1165,9 @@ export function WrittenWork({
             : work.title) || t('emptyText')}
         </h2>
       </div>
-      <PaperText doc={finalDoc} anchors={anchors} />
+      <PaperText doc={finalDoc} anchors={anchors} sources={work.sources} />
       <div className='grid gap-2 border-t pt-3 text-sm'>
-        <details>
-          <summary className='cursor-pointer font-medium'>{t('goal')}</summary>
-          <p className='mt-2 wrap-break-word whitespace-pre-wrap'>
-            {work.goal || t('emptyText')}
-          </p>
-          {work.aiGoal && (
-            <p className='mt-2 wrap-break-word whitespace-pre-wrap'>
-              {t('aiGoal')} · {work.aiGoal}
-            </p>
-          )}
-        </details>
+        <WritingProcess work={work} reviews={reviews} />
         <details>
           <summary className='cursor-pointer font-medium'>
             {t('outline')}
@@ -800,7 +1181,7 @@ export function WrittenWork({
             {t('initialDraft')}
           </summary>
           <p className='mt-2 font-medium'>{work.title}</p>
-          <PaperText doc={work.draft} />
+          <PaperText doc={work.draft} sources={work.sources} />
         </details>
         <details>
           <summary className='cursor-pointer font-medium'>

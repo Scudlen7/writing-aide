@@ -4,6 +4,8 @@ import type {
   Assignment,
   AssignmentListItem,
   Classroom,
+  CourseProgressStudent,
+  GradeDraft,
   Identity,
   Submission,
   SubmissionSummary,
@@ -55,12 +57,24 @@ export interface DashboardData {
   assignments: AssignmentListItem[]
 }
 export type AssignmentDetail = { assignment: Assignment } & (
-  | { submissions: SubmissionSummary[]; started: boolean }
-  | { submission: Submission | null; reviews: AiReview[]; aiEnabled: boolean }
+  | {
+      submissions: SubmissionSummary[]
+      students?: CourseProgressStudent[]
+      started: boolean
+    }
+  | {
+      submission: Submission | null
+      reviews: AiReview[]
+      previousReviews?: AiReview[]
+      aiEnabled: boolean
+    }
 )
 export interface GradingDetail {
   assignment: Assignment
   submission: Submission & { studentName: string }
+  gradeDraft: GradeDraft | null
+  priorGradeDraft?: GradeDraft | null
+  previousReviews?: AiReview[]
   reviews: AiReview[]
   aiEnabled: boolean
 }

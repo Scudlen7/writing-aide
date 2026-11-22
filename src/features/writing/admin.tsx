@@ -28,6 +28,23 @@ type DirectoryAssignment = Assignment & {
   submissionCount: number
   started: boolean
 }
+type Diagnostics = {
+  model: {
+    id: string
+    task: 'outline' | 'revision' | 'assessment'
+    model: string
+    outcome: string
+    durationMs: number
+    createdAt: string
+  }[]
+  changes: {
+    id: string
+    actor: string
+    action: string
+    targetId: string
+    createdAt: string
+  }[]
+}
 
 export function AdminWorkbench({
   section,
@@ -115,6 +132,7 @@ export function AdminWorkbench({
           ))}
         </div>
       )}
+      {!section && <AdminDiagnostics />}
       {section === 'users' && (
         <>
           <QueryStatus query={users} />
@@ -158,6 +176,73 @@ export function AdminWorkbench({
         </>
       )}
     </Main>
+  )
+}
+
+function AdminDiagnostics() {
+  const { t, i18n } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const diagnostics = useQuery({
+    enabled: open,
+    queryKey: ['writing-admin', 'diagnostics'],
+    queryFn: () => request<Diagnostics>('/api/admin/diagnostics'),
+  })
+  const date = new Intl.DateTimeFormat(i18n.language, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  })
+  return (
+    <details
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className='rounded-xl border bg-card'
+    >
+      <summary className='cursor-pointer px-4 py-3 font-semibold'>
+        {t('adminDiagnostics')}
+      </summary>
+      {open && (
+        <div className='grid gap-4 border-t p-4 text-sm md:grid-cols-2'>
+          <QueryStatus query={diagnostics} />
+          {diagnostics.data && (
+            <>
+              <section className='min-w-0 space-y-2'>
+                <h2 className='font-medium'>
+                  {t('recentModelRequests', {
+                    count: diagnostics.data.model.length,
+                  })}
+                </h2>
+                <ul className='space-y-1'>
+                  {diagnostics.data.model.map((item) => (
+                    <li key={item.id} className='wrap-break-word'>
+                      {date.format(new Date(item.createdAt))} ·{' '}
+                      {t(`aiTask.${item.task}`)} · {item.model || '—'} ·{' '}
+                      {item.outcome === 'success'
+                        ? t('modelRequestSuccess')
+                        : t([`error.${item.outcome}`, 'error.aiFailed'])}{' '}
+                      · {item.durationMs} ms
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <section className='min-w-0 space-y-2'>
+                <h2 className='font-medium'>
+                  {t('recentAdminChanges', {
+                    count: diagnostics.data.changes.length,
+                  })}
+                </h2>
+                <ul className='space-y-1'>
+                  {diagnostics.data.changes.map((item) => (
+                    <li key={item.id} className='wrap-break-word'>
+                      {date.format(new Date(item.createdAt))} · {item.actor} ·{' '}
+                      {item.action} · {item.targetId}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </>
+          )}
+        </div>
+      )}
+    </details>
   )
 }
 

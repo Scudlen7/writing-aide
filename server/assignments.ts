@@ -24,6 +24,7 @@ export const assignmentFields = {
   maxLength: assignment.maxLength,
   checklist: assignment.checklist,
   rubric: assignment.rubric,
+  aiPolicy: assignment.aiPolicy,
   archived: sql<boolean>`(${assignment.archived} or ${classroom.archived})`,
   updatedAt: assignment.updatedAt,
 }
@@ -91,6 +92,7 @@ export function assignmentRequirements(
     maxLength,
     checklist,
     rubric,
+    aiPolicy,
   } = row
   return {
     title,
@@ -101,6 +103,7 @@ export function assignmentRequirements(
     maxLength,
     checklist,
     rubric,
+    ...(aiPolicy ? { aiPolicy } : {}),
   }
 }
 
@@ -124,6 +127,8 @@ export async function updateAssignment(
   if (classroomId !== undefined && classroomId !== row.classroomId)
     throw new ApiError(400, 'fixedClassroom')
   const current = assignmentRequirements(row)
+  input = { ...input, aiPolicy: input.aiPolicy ?? current.aiPolicy }
+  if (!input.aiPolicy) delete input.aiPolicy
   const dueAt = new Date(input.dueAt)
   if (isDeepStrictEqual(current, { ...input, dueAt: dueAt.toISOString() }))
     return false
@@ -136,6 +141,7 @@ export async function updateAssignment(
     'maxLength',
     'checklist',
     'rubric',
+    'aiPolicy',
   ] as const
   if (
     frozen.some((key) => !isDeepStrictEqual(current[key], input[key])) &&

@@ -22,6 +22,27 @@
       "when": 1794850611765,
       "tag": "0002_class_private_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795324699397,
+      "tag": "0003_grading_draft",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795325421140,
+      "tag": "0004_assignment_ai_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795326112990,
+      "tag": "0005_teaching_workflows",
+      "breakpoints": true
     }
   ]
 }

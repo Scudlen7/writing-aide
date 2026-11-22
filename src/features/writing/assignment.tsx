@@ -1,6 +1,13 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouter } from '@tanstack/react-router'
-import type { Assignment, Identity } from '@writing/writing'
+import {
+  courseProgresses,
+  type Assignment,
+  type CourseProgress,
+  type CourseProgressStudent,
+  type Identity,
+} from '@writing/writing'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -8,6 +15,8 @@ import { Button } from '@/components/ui/button'
 import { Main } from '@/components/layout/main'
 import { dashboardOptions, type AssignmentDetail } from './api'
 import { AssignmentDialog } from './dashboard'
+import { selectField } from './management-ui'
+import { PeerPanel } from './peer'
 import { Deadline, PaperLanguage, Requirements, StatusBadge } from './ui'
 import { Workspace } from './workspace'
 
@@ -143,7 +152,16 @@ export function AssignmentPage({
               </p>
             )}
           </section>
-          <Requirements assignment={assignment} open />
+          <aside className='space-y-3'>
+            <Requirements assignment={assignment} open />
+            <PeerPanel assignmentId={assignment.id} personId={person.id} />
+            {!assignment.archived && (
+              <CourseProgressList
+                assignmentId={assignment.id}
+                students={detail.students ?? []}
+              />
+            )}
+          </aside>
         </div>
       ) : (
         <Workspace
@@ -151,10 +169,83 @@ export function AssignmentPage({
           assignment={assignment}
           submission={detail.submission}
           reviews={detail.reviews}
+          previousReviews={detail.previousReviews}
           aiEnabled={detail.aiEnabled}
+          personId={person.id}
         />
       )}
     </Main>
+  )
+}
+
+function CourseProgressList({
+  assignmentId,
+  students,
+}: {
+  assignmentId: string
+  students: CourseProgressStudent[]
+}) {
+  const { t } = useTranslation()
+  const [status, setStatus] = useState<CourseProgress | ''>('')
+  const filtered = status
+    ? students.filter((student) => student.status === status)
+    : students
+  return (
+    <details className='rounded-xl border bg-card'>
+      <summary className='cursor-pointer px-4 py-3 text-sm font-semibold'>
+        {t('courseTasks')}
+      </summary>
+      <div className='space-y-3 border-t p-4 text-sm'>
+        <select
+          aria-label={t('courseTasks')}
+          className={selectField}
+          value={status}
+          onChange={(event) =>
+            setStatus(event.target.value as CourseProgress | '')
+          }
+        >
+          <option value=''>{t('allProgress')}</option>
+          {courseProgresses.map((item) => (
+            <option key={item} value={item}>
+              {t(item === 'draft' ? 'draftStatus' : item)} ·{' '}
+              {students.filter((student) => student.status === item).length}
+            </option>
+          ))}
+        </select>
+        {filtered.length ? (
+          <ul className='divide-y'>
+            {filtered.map((student) => (
+              <li
+                key={student.id}
+                className='flex flex-wrap justify-between gap-2 py-2'
+              >
+                {student.submissionId ? (
+                  <Link
+                    className='text-primary underline'
+                    to='/assignments/$assignmentId/submissions/$submissionId'
+                    params={{
+                      assignmentId,
+                      submissionId: student.submissionId,
+                    }}
+                  >
+                    {student.name}
+                  </Link>
+                ) : (
+                  <span>{student.name}</span>
+                )}
+                <span className='text-muted-foreground'>
+                  {t(
+                    student.status === 'draft' ? 'draftStatus' : student.status
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className='text-muted-foreground'>{t('noProgressMatches')}</p>
+        )}
+      </div>
+    </details>
   )
 }
 
