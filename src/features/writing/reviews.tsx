@@ -228,9 +228,13 @@ function DecisionForm({
       <select
         name='choice'
         aria-label={t('aiDecisions')}
-        defaultValue={previous?.choice ?? 'accepted'}
+        defaultValue={previous?.choice ?? ''}
+        required
         className='h-8 rounded-md border border-input bg-background px-2'
       >
+        <option value='' disabled>
+          {t('selectDecision')}
+        </option>
         <option value='accepted'>{t('accepted')}</option>
         <option value='declined'>{t('declined')}</option>
       </select>

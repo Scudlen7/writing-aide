@@ -1,22 +1,13 @@
 /// <reference types="vitest/config" />
-import path from 'path';
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-import { tanstackRouter } from '@tanstack/router-plugin/vite';
-import { playwright } from '@vitest/browser-playwright';
-
-
-
-
-
-
-
-
-
+import path from 'path'
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import { playwright } from '@vitest/browser-playwright'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     tanstackRouter({
       target: 'react',
@@ -31,6 +22,18 @@ export default defineConfig({
       '@writing': path.resolve(__dirname, './shared'),
     },
   },
+  optimizeDeps:
+    mode === 'test'
+      ? {
+          // Route splitting hides these imports from the browser test scan.
+          include: [
+            '@tanstack/react-query-devtools',
+            '@tanstack/react-router-devtools',
+            'react-dom/client',
+            'react-top-loading-bar',
+          ],
+        }
+      : undefined,
   server: {
     host: '0.0.0.0',
     proxy: {
@@ -57,4 +60,4 @@ export default defineConfig({
       ],
     },
   },
-})
+}))
