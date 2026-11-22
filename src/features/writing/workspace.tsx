@@ -282,7 +282,13 @@ function StageEditor({
   const version = submission?.version ?? 0
   const stageDoc = fields.draft ?? fields.revision ?? work.revision
   const count = countWriting(stageDoc, assignment.language)
-  const unit = t(assignment.language === 'en' ? 'words' : 'characters')
+  const unitKey = assignment.language === 'en' ? 'words' : 'characters'
+  const unit = t(unitKey)
+  const tooShort = count < assignment.minLength
+  const lengthOutsideRange = tooShort || count > assignment.maxLength
+  const lengthDifference = tooShort
+    ? assignment.minLength - count
+    : count - assignment.maxLength
   const hasDoc = stage === 'draft' || stage === 'revise'
   const selectionValid =
     selected &&
@@ -534,10 +540,34 @@ function StageEditor({
               </Field>
               <details className='rounded-lg border p-3'>
                 <summary className='cursor-pointer text-sm font-medium'>
-                  {t('finalDraft')} · {t('wordCount', { count, unit })}
+                  {t('finalDraft')}
                 </summary>
                 <PaperText doc={work.revision} />
               </details>
+              <div className='space-y-1 text-sm tabular-nums'>
+                <div className='flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground'>
+                  <span>
+                    {t('currentLength', { count, unit: t(unitKey, { count }) })}
+                  </span>
+                  <span>
+                    {t('requiredLength', {
+                      range: t('lengthRule', {
+                        min: assignment.minLength,
+                        max: assignment.maxLength,
+                        unit,
+                      }),
+                    })}
+                  </span>
+                </div>
+                {lengthOutsideRange && (
+                  <p className='text-destructive'>
+                    {t(tooShort ? 'draftTooShort' : 'draftTooLong', {
+                      count: lengthDifference,
+                      unit: t(unitKey, { count: lengthDifference }),
+                    })}
+                  </p>
+                )}
+              </div>
             </>
           )}
           <Problem error={error} />
@@ -568,13 +598,16 @@ function StageEditor({
                   }
                 >
                   <ChevronLeft />
-                  {t('previousStage')}
+                  {t(stage === 'reflect' ? 'reviseAgain' : 'previousStage')}
                 </Button>
               )}
               {stage === 'reflect' ? (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button type='button' disabled={pending || reviewing}>
+                    <Button
+                      type='button'
+                      disabled={pending || reviewing || lengthOutsideRange}
+                    >
                       {t('submit')}
                     </Button>
                   </AlertDialogTrigger>
