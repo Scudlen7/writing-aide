@@ -202,6 +202,18 @@ export function Requirements({
             {t(assignment.language === 'en' ? 'countRuleEn' : 'countRuleZh')}
           </p>
         </div>
+        <section className='space-y-1'>
+          <h3 className='font-semibold'>{t('aiRules')}</h3>
+          <p>
+            {assignment.aiPolicy?.length === 0
+              ? t('manualFeedbackOnly')
+              : assignment.aiPolicy
+                ? assignment.aiPolicy
+                    .map((task) => t(`aiTask.${task}`))
+                    .join(' · ')
+                : t('legacyAiRules')}
+          </p>
+        </section>
         <h3 className='font-semibold'>{t('rubric')}</h3>
         <ul className='space-y-2'>
           {assignment.rubric.map((item, index) => (
@@ -213,6 +225,16 @@ export function Requirements({
               {item.description && (
                 <p className='wrap-break-word whitespace-pre-wrap text-muted-foreground'>
                   {item.description}
+                </p>
+              )}
+              {item.levels && (
+                <p className='wrap-break-word whitespace-pre-wrap'>
+                  <strong>{t('rubricLevels')}</strong> · {item.levels}
+                </p>
+              )}
+              {item.example && (
+                <p className='wrap-break-word whitespace-pre-wrap'>
+                  <strong>{t('rubricExample')}</strong> · {item.example}
                 </p>
               )}
             </li>

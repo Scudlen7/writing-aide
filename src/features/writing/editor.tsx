@@ -1,12 +1,85 @@
-import { createElement } from 'react'
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useId,
+} from 'react'
+import {
+  EditorContent,
+  mergeAttributes,
+  Node,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+  useEditorState,
+  type NodeViewProps,
+} from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { blockText, type WritingDocument } from '@writing/writing'
+import {
+  inTextReference,
+  referenceEntries,
+  referenceParts,
+  type ReferenceEntry,
+  type ReferenceSource,
+} from '@writing/references'
+import { blockText, citedSources, type WritingDocument } from '@writing/writing'
 import { Bold, Heading2, Italic, Pilcrow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
+const Citations = createContext<Map<string, ReferenceEntry>>(new Map())
+
+function CitationView({ node }: NodeViewProps) {
+  const { t } = useTranslation()
+  const entry = useContext(Citations).get(node.attrs.sourceId)
+  return (
+    <NodeViewWrapper as='span' contentEditable={false} className='text-primary'>
+      {entry
+        ? inTextReference(entry, node.attrs.locator)
+        : t('missingReference')}
+    </NodeViewWrapper>
+  )
+}
+
+const citation = Node.create({
+  name: 'citation',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  addAttributes() {
+    return {
+      sourceId: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-source-id'),
+        renderHTML: (attrs: Record<string, string>) => ({
+          'data-source-id': attrs.sourceId,
+        }),
+      },
+      locator: {
+        default: '',
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-locator') ?? '',
+        renderHTML: (attrs: Record<string, string>) => ({
+          'data-locator': attrs.locator,
+        }),
+      },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-citation][data-source-id]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes, { 'data-citation': '' })]
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(CitationView, { as: 'span' })
+  },
+})
+
 const extensions = [
+  citation,
   StarterKit.configure({
     blockquote: false,
     bulletList: false,
@@ -23,19 +96,31 @@ const extensions = [
   }),
 ]
 
+export type TextLocation = { block: number; offset: number; text: string }
+export type CitationInput = { sourceId: string; locator: string }
+
 export function PaperEditor({
   value,
   onChange,
   onParagraph,
+  autofocus = false,
+  location,
+  sources = [],
+  insertion,
 }: {
   value: WritingDocument
   onChange: (doc: WritingDocument) => void
   onParagraph?: (block: number | null) => void
+  autofocus?: boolean
+  location?: TextLocation
+  sources?: ReferenceSource[]
+  insertion?: CitationInput
 }) {
   const { t } = useTranslation()
   const editor = useEditor({
     extensions,
     content: value,
+    autofocus: autofocus ? 'start' : false,
     editorProps: {
       attributes: {
         class: 'paper-prose min-h-60 p-4 focus:outline-none sm:p-6',
@@ -57,6 +142,50 @@ export function PaperEditor({
       selectedEnd: editor && editor.state.selection.$to.index(0),
     }),
   })
+  useEffect(() => {
+    if (!editor || !location) return
+    editor.state.doc.forEach((node, position, index) => {
+      if (index !== location.block || node.type.name !== 'paragraph') return
+      const from = position + 1 + location.offset
+      const to = from + location.text.length
+      if (
+        to > position + node.nodeSize - 1 ||
+        editor.state.doc.textBetween(from, to, '', (leaf) =>
+          leaf.type.name === 'hardBreak' ? '\n' : ' '
+        ) !== location.text
+      )
+        return
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from, to })
+        .scrollIntoView()
+        .run()
+    })
+  }, [editor, location])
+  useEffect(() => {
+    if (!editor || !insertion) return
+    if (editor.state.selection.$to.parent.type.name !== 'paragraph')
+      editor.chain().focus('end').insertContent({ type: 'paragraph' }).run()
+    const { $to, to } = editor.state.selection
+    const before = $to.parent.textBetween(0, $to.parentOffset, '', ' ')
+    const after = $to.parent.textBetween(
+      $to.parentOffset,
+      $to.parent.content.size,
+      '',
+      ' '
+    )
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(to)
+      .insertContent([
+        ...(before && !/\s$/.test(before) ? [{ type: 'text', text: ' ' }] : []),
+        { type: 'citation', attrs: insertion },
+        ...(after && !/^\s/.test(after) ? [{ type: 'text', text: ' ' }] : []),
+      ])
+      .run()
+  }, [editor, insertion])
   if (!editor) return null
 
   return (
@@ -130,7 +259,18 @@ export function PaperEditor({
           </Button>
         )}
       </div>
-      <EditorContent editor={editor} />
+      <Citations.Provider
+        value={
+          new Map(
+            referenceEntries(sources, citedSources(value)).map((entry) => [
+              entry.source.id,
+              entry,
+            ])
+          )
+        }
+      >
+        <EditorContent editor={editor} />
+      </Citations.Provider>
     </div>
   )
 }
@@ -138,10 +278,16 @@ export function PaperEditor({
 export function PaperText({
   doc,
   anchors = false,
+  sources = [],
 }: {
   doc: WritingDocument
   anchors?: boolean
+  sources?: ReferenceSource[]
 }) {
+  const { t } = useTranslation()
+  const prefix = useId()
+  const entries = referenceEntries(sources, citedSources(doc))
+  const references = new Map(entries.map((entry) => [entry.source.id, entry]))
   return (
     <div className='paper-prose'>
       {doc.content.map((block, index) =>
@@ -163,6 +309,20 @@ export function PaperText({
           },
           block.content?.map((item, position) => {
             if (item.type === 'hardBreak') return <br key={position} />
+            if (item.type === 'citation') {
+              const entry = references.get(item.attrs.sourceId)
+              return entry ? (
+                <a
+                  key={position}
+                  className='text-primary underline'
+                  href={`#${prefix}-${entry.source.id}`}
+                >
+                  {inTextReference(entry, item.attrs.locator)}
+                </a>
+              ) : (
+                <span key={position}>{t('missingReference')}</span>
+              )
+            }
             return (
               <span
                 key={position}
@@ -180,6 +340,47 @@ export function PaperText({
             )
           })
         )
+      )}
+      {entries.length > 0 && (
+        <section className='mt-4 space-y-2 border-t pt-3'>
+          <h3>{t('bibliography')}</h3>
+          <ul className='space-y-2'>
+            {entries.map((entry) => (
+              <li
+                key={entry.source.id}
+                id={`${prefix}-${entry.source.id}`}
+                tabIndex={-1}
+                className='scroll-mt-24 wrap-break-word'
+              >
+                {referenceParts(entry).map((part, index) =>
+                  part.url ? (
+                    <a
+                      key={index}
+                      href={part.url}
+                      target='_blank'
+                      rel='noreferrer'
+                      className='text-primary underline'
+                    >
+                      {part.text}
+                    </a>
+                  ) : (
+                    <span
+                      key={index}
+                      className={part.italic ? 'italic' : undefined}
+                    >
+                      {part.text}
+                    </span>
+                  )
+                )}
+                {entry.source.evidence && (
+                  <p className='text-sm whitespace-pre-wrap text-muted-foreground'>
+                    {entry.source.evidence}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   )

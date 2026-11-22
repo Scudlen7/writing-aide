@@ -11,10 +11,11 @@ export const Route = createFileRoute(
     ),
   gcTime: 0,
   component: function GradingRoute() {
+    const detail = Route.useLoaderData()
     return (
       <GradingPage
-        key={Route.useParams().submissionId}
-        detail={Route.useLoaderData()}
+        key={`${detail.submission.id}/${detail.submission.status}/${detail.submission.version}`}
+        detail={detail}
       />
     )
   },

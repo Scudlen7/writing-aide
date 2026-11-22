@@ -1,3 +1,11 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
+import '@/styles/index.css'
 import {
   emptyWork,
   type AiReview,
@@ -7,8 +15,9 @@ import {
 import i18n from 'i18next'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
-import { userEvent } from 'vitest/browser'
-import { request } from './api'
+import { page as browserPage, userEvent } from 'vitest/browser'
+import { request, RequestError } from './api'
+import { GradingPage } from './grading'
 import './i18n'
 import { ReviewPanel } from './reviews'
 import { Workspace } from './workspace'
@@ -59,7 +68,190 @@ function reflection(revision: string): Submission {
   }
 }
 
-beforeEach(() => api.mockReset())
+beforeEach(() => {
+  api.mockReset()
+})
+
+it('restores a grading draft and asks for confirmation before publishing', async () => {
+  await i18n.changeLanguage('en')
+  const submitted = {
+    ...reflection('Three valid words.'),
+    status: 'submitted' as const,
+    studentName: 'Test student',
+  }
+  const input = {
+    scores: [8],
+    criteriaFeedback: ['Saved criterion feedback'],
+    feedback: 'Saved overall feedback',
+    annotations: [],
+  }
+  api.mockResolvedValue({ ...submitted, status: 'graded', grade: input })
+  const client = new QueryClient()
+  const root = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={client}>
+        <GradingPage
+          detail={{
+            assignment: { ...assignment, language: 'en' },
+            submission: submitted,
+            gradeDraft: {
+              version: 3,
+              submissionVersion: submitted.version,
+              input,
+            },
+            reviews: [],
+            aiEnabled: false,
+          }}
+        />
+      </QueryClientProvider>
+    ),
+  })
+  const router = createRouter({
+    routeTree: root,
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
+  const page = await render(<RouterProvider router={router} />)
+  await expect
+    .element(
+      page.getByRole('spinbutton', { name: `Evidence · ${i18n.t('score')}` })
+    )
+    .toHaveValue(8)
+  await expect
+    .element(
+      page.getByRole('textbox', { name: i18n.t('feedback'), exact: true })
+    )
+    .toHaveValue(input.feedback)
+  await userEvent.click(
+    page.getByRole('button', { name: i18n.t('publishGrade'), exact: true })
+  )
+  const dialog = page.getByRole('alertdialog')
+  await expect.element(dialog).toBeVisible()
+  await expect.element(dialog.getByText(/Total 8 \/ 10/)).toBeVisible()
+  expect(api).not.toHaveBeenCalled()
+  await userEvent.click(
+    dialog.getByRole('button', { name: i18n.t('publishGrade') })
+  )
+  await expect
+    .element(page.getByText(i18n.t('finalScore'), { exact: false }))
+    .toBeVisible()
+  expect(api).toHaveBeenCalledWith(
+    '/api/assignments/assignment/submissions/submission/grade',
+    'PUT',
+    { ...input, submissionVersion: submitted.version, draftVersion: 3 }
+  )
+})
+
+it('inserts a verified citation at the writing cursor without changing the word count', async () => {
+  await i18n.changeLanguage('en')
+  const submission = reflection('Three valid words.')
+  submission.stage = 'revise'
+  const sourceId = '99e3347e-9650-4df7-9b00-5d4c161df7fe'
+  submission.work.sources = [
+    {
+      id: sourceId,
+      kind: 'webpage',
+      title: 'Public source',
+      authors: [{ family: 'Lee', given: 'Ada' }],
+      year: '2024',
+      venue: 'Test Library',
+      volume: '',
+      issue: '',
+      pages: '',
+      url: 'https://example.org/source',
+      doi: '',
+      evidence: '',
+      locator: 'p. 3',
+      verified: true,
+    },
+  ]
+  api.mockImplementation(async (_path, _method, body) => ({
+    ...submission,
+    work: { ...submission.work, ...(body as { changes: object }).changes },
+  }))
+  const page = await render(
+    <Workspace
+      assignment={{ ...assignment, language: 'en' }}
+      submission={submission}
+      reviews={[]}
+      aiEnabled={false}
+    />
+  )
+  await userEvent.click(
+    page.getByText('Sources and citations', { exact: true })
+  )
+  await userEvent.click(page.getByRole('button', { name: 'Insert citation' }))
+  await expect
+    .element(page.getByText('(Lee, 2024, p. 3)', { exact: true }))
+    .toBeVisible()
+  await expect.element(page.getByText(/^3 words ·/)).toBeVisible()
+  await expect
+    .poll(() => api.mock.calls[0]?.[2])
+    .toMatchObject({
+      changes: {
+        revision: {
+          content: [
+            expect.objectContaining({
+              content: expect.arrayContaining([
+                { type: 'citation', attrs: { sourceId, locator: 'p. 3' } },
+              ]),
+            }),
+          ],
+        },
+      },
+    })
+})
+
+it('supports keyboard reflection and conflict recovery in a narrow dark workspace', async () => {
+  await i18n.changeLanguage('en')
+  const submission = reflection('Three valid words.')
+  submission.work.reflection = ''
+  api.mockImplementation(() => {
+    throw new RequestError(409, 'versionConflict')
+  })
+  const viewport = [window.innerWidth, window.innerHeight] as const
+  await browserPage.viewport(390, 844)
+  try {
+    const page = await render(
+      <div className='dark'>
+        <main className='writing-app bg-background p-4'>
+          <Workspace
+            assignment={{ ...assignment, language: 'en' }}
+            submission={submission}
+            reviews={[]}
+            aiEnabled={false}
+          />
+        </main>
+      </div>
+    )
+    const area = page.getByRole('main').element()
+    expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth)
+    const submit = page.getByRole('button', {
+      name: 'Submit paper',
+      exact: true,
+    })
+    await expect.element(submit).toBeDisabled()
+    const prompt = page.getByRole('button', { name: 'Complete reflection' })
+    await expect.element(prompt).toBeVisible()
+    const promptButton = prompt.element() as HTMLButtonElement
+    promptButton.focus()
+    await userEvent.keyboard('{Enter}')
+    const field = page.getByRole('textbox', { name: 'Writing reflection' })
+    await expect.element(field).toHaveFocus()
+    await userEvent.fill(field, 'My unsaved changes')
+    await expect
+      .element(page.getByText('Save failed', { exact: true }))
+      .toBeVisible()
+    await expect.element(submit).toBeDisabled()
+    await userEvent.click(page.getByText('Copy unsaved text', { exact: true }))
+    await expect
+      .element(page.getByRole('textbox', { name: 'Unsaved text' }))
+      .toHaveValue('My unsaved changes')
+    expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth)
+    expect(api).toHaveBeenCalledTimes(1)
+  } finally {
+    await browserPage.viewport(...viewport)
+  }
+})
 
 it.each([
   {

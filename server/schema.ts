@@ -13,14 +13,22 @@ import {
   boolean,
 } from 'drizzle-orm/pg-core'
 import {
+  peerStates,
+  type PeerFeedback,
+  type PeerReport,
+} from '../shared/peer.ts'
+import {
   notificationKinds,
   roles,
   type AiResult,
   type AiTask,
   type AssignmentInput,
+  type AssessmentCalibration,
   type Decision,
+  type GradeDraft,
   type GradeInput,
   type ReviewSource,
+  type ReturnedPaper,
   type Stage,
   type Work,
 } from '../shared/writing.ts'
@@ -142,6 +150,7 @@ export const assignment = pgTable(
       .$type<AssignmentInput['checklist']>()
       .notNull(),
     rubric: jsonb('rubric').$type<AssignmentInput['rubric']>().notNull(),
+    aiPolicy: jsonb('ai_policy').$type<AiTask[]>(),
     archived: boolean('archived').notNull().default(false),
     updatedAt: date('updated_at'),
   },
@@ -166,6 +175,9 @@ export const submission = pgTable(
     version: integer('version').notNull().default(0),
     work: jsonb('work').$type<Work>().notNull(),
     grade: jsonb('grade').$type<GradeInput>(),
+    gradeDraft: jsonb('grade_draft').$type<GradeDraft>(),
+    returned: jsonb('returned').$type<ReturnedPaper>(),
+    priorGradeDraft: jsonb('prior_grade_draft').$type<GradeDraft>(),
     submittedAt: date('submitted_at'),
     requirements: jsonb('requirements').$type<AssignmentInput>(),
   },
@@ -180,8 +192,10 @@ export const aiReview = pgTable(
       .notNull()
       .references(() => submission.id),
     task: text('task').$type<AiTask>().notNull(),
+    attempt: integer('attempt').notNull().default(1),
     result: jsonb('result').$type<AiResult>().notNull(),
     source: jsonb('source').$type<ReviewSource>(),
+    calibration: jsonb('calibration').$type<AssessmentCalibration>(),
     decisions: jsonb('decisions')
       .$type<Record<string, Decision>>()
       .notNull()
@@ -189,6 +203,27 @@ export const aiReview = pgTable(
     createdAt: date('created_at').notNull().defaultNow(),
   },
   (table) => [index().on(table.submissionId)]
+)
+
+export const peerReview = pgTable(
+  'peer_review',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    submissionId: uuid('submission_id')
+      .notNull()
+      .references(() => submission.id),
+    reviewerId: text('reviewer_id')
+      .notNull()
+      .references(() => user.id),
+    submissionVersion: integer('submission_version').notNull(),
+    status: text('status', { enum: peerStates }).notNull().default('assigned'),
+    feedback: jsonb('feedback').$type<PeerFeedback>(),
+    report: jsonb('report').$type<PeerReport>(),
+    createdAt: date('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    unique().on(table.submissionId, table.reviewerId, table.submissionVersion),
+  ]
 )
 
 export const notification = pgTable(
@@ -222,6 +257,19 @@ export const managementAudit = pgTable('management_audit', {
   action: text('action').notNull(),
   createdAt: date('created_at').notNull().defaultNow(),
 })
+
+export const aiRequestEvent = pgTable(
+  'ai_request_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    task: text('task').$type<AiTask>().notNull(),
+    model: text('model').notNull(),
+    outcome: text('outcome').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: date('created_at').defaultNow().notNull(),
+  },
+  (table) => [index().on(table.createdAt)]
+)
 
 export const chatMessage = pgTable(
   'chat_message',

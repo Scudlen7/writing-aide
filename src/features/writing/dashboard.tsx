@@ -1,18 +1,21 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import type {
-  AssignmentInput,
-  Assignment,
-  Classroom,
-  Identity,
-  Language,
+import {
+  aiTasks,
+  type AiTask,
+  type AssignmentInput,
+  type Assignment,
+  type Classroom,
+  type Identity,
+  type Language,
 } from '@writing/writing'
 import { ArrowRight, Copy, GraduationCap, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -420,6 +423,9 @@ function AssignmentForm({
       ).map((key) => ({ label: t(key), max: 10, description: '' }))
   )
   const editing = mode === 'edit' && initial
+  const [aiPolicy, setAiPolicy] = useState<AiTask[] | null>(
+    () => initial?.aiPolicy ?? (mode === 'edit' ? null : [...aiTasks])
+  )
   const due = editing ? new Date(initial.dueAt) : null
   const localDue = due
     ? new Date(due.valueOf() - due.getTimezoneOffset() * 60000)
@@ -477,6 +483,7 @@ function AssignmentForm({
                 .map((item) => item.trim())
                 .filter(Boolean),
           rubric,
+          aiPolicy,
         }
       )
       await client.invalidateQueries({ queryKey: dashboardKey })
@@ -595,6 +602,28 @@ function AssignmentForm({
           />
         </Field>
         <fieldset className='grid gap-3 rounded-xl border p-3'>
+          <legend className='px-1 text-sm font-semibold'>{t('aiRules')}</legend>
+          <p className='text-sm text-muted-foreground'>{t('aiRulesHint')}</p>
+          {aiTasks.map((task) => (
+            <label key={task} className='flex items-center gap-2 text-sm'>
+              <Checkbox
+                disabled={frozen}
+                checked={(aiPolicy ?? aiTasks).includes(task)}
+                onCheckedChange={(checked) =>
+                  setAiPolicy((previous) =>
+                    aiTasks.filter((item) =>
+                      item === task
+                        ? checked === true
+                        : (previous ?? aiTasks).includes(item)
+                    )
+                  )
+                }
+              />
+              {t(`aiTask.${task}`)}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className='grid gap-3 rounded-xl border p-3'>
           <legend className='px-1 text-sm font-semibold'>{t('rubric')}</legend>
           {rubric.map((item, index) => (
             <div key={index} className='grid gap-2 rounded-md bg-muted/45 p-3'>
@@ -644,6 +673,30 @@ function AssignmentForm({
                   maxLength={1000}
                   onChange={(event) =>
                     updateCriterion(index, { description: event.target.value })
+                  }
+                />
+              </Field>
+              <Field label={t('rubricLevels')}>
+                <Textarea
+                  rows={2}
+                  value={item.levels ?? ''}
+                  maxLength={1500}
+                  onChange={(event) =>
+                    updateCriterion(index, {
+                      levels: event.target.value || undefined,
+                    })
+                  }
+                />
+              </Field>
+              <Field label={t('rubricExample')}>
+                <Textarea
+                  rows={2}
+                  value={item.example ?? ''}
+                  maxLength={1500}
+                  onChange={(event) =>
+                    updateCriterion(index, {
+                      example: event.target.value || undefined,
+                    })
                   }
                 />
               </Field>

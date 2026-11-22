@@ -11,6 +11,7 @@ import {
   type ChatHistory,
   type ChatMessage,
 } from '../shared/chat.ts'
+import type { PeerReviewDirectory } from '../shared/peer.ts'
 import type {
   AiReview,
   Assignment,
@@ -36,8 +37,41 @@ test('Chinese and English course papers from class creation to feedback', async 
   process.env.APP_ORIGIN = 'http://localhost:5173'
   process.env.AI_API_KEY = 'local-fixture'
   process.env.AI_MODEL = 'fixture'
-  let modelFailure: 'rateLimit' | 'empty' | 'badExcerpt' | null = null
+  let modelFailure: 'rateLimit' | 'empty' | 'badExcerpt' | 'timeout' | null =
+    null
+  let modelCalls = 0
+  const realFetch = globalThis.fetch
+  let doiRequests = 0
+  globalThis.fetch = (input, init) => {
+    const url = String(input)
+    if (modelFailure === 'timeout' && url.endsWith('/chat/completions'))
+      return Promise.reject(
+        new DOMException('Fixture timed out', 'TimeoutError')
+      )
+    if (!url.startsWith('https://api.crossref.org/'))
+      return realFetch(input, init)
+    doiRequests++
+    assert.equal(
+      url,
+      'https://api.crossref.org/works/10.1234%2Fsynthetic-course-example'
+    )
+    return Promise.resolve(
+      Response.json({
+        message: {
+          title: ['Synthetic source'],
+          type: 'journal-article',
+          author: [{ family: 'Lee', given: 'Ada' }],
+          published: { 'date-parts': [[2024]] },
+          'container-title': ['Test Journal'],
+        },
+      })
+    )
+  }
+  t.after(() => {
+    globalThis.fetch = realFetch
+  })
   const model = createServer(async (request, response) => {
+    modelCalls++
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(chunk)
     const input = JSON.parse(Buffer.concat(chunks).toString())
@@ -60,6 +94,9 @@ test('Chinese and English course papers from class creation to feedback', async 
           advice: system.includes('Simplified Chinese')
             ? '补充一个实例。'
             : 'Give a concrete example.',
+          ...(system.includes('tentative grade')
+            ? { criterion: 0, reason: 'Uses a specific example.' }
+            : {}),
         },
       ],
       ...(system.includes('tentative grade') ? { scores: [7] } : {}),
@@ -430,6 +467,7 @@ test('Chinese and English course papers from class creation to feedback', async 
         { label: 'Evidence', description: 'Support the argument', max: 10 },
       ],
       checklist: ['I named my sources'],
+      aiPolicy: ['outline', 'revision', 'assessment'],
     }
     const { body: assignment } = await call<Assignment>(
       'POST',
@@ -441,6 +479,55 @@ test('Chinese and English course papers from class creation to feedback', async 
       }
     )
     const path = `/api/assignments/${assignment.id}`
+    const { body: manual } = await call<{ id: string }>(
+      'POST',
+      '/api/assignments',
+      {
+        cookie: teacher.cookie,
+        payload: { ...assignmentInput, classroomId: course.id, aiPolicy: [] },
+        status: 201,
+      }
+    )
+    const beforeDenied = modelCalls
+    await call('POST', `/api/assignments/${manual.id}/reviews`, {
+      cookie: student.cookie,
+      payload: { task: 'outline' },
+      status: 403,
+    })
+    assert.equal(modelCalls, beforeDenied)
+    for (const [account, goal] of [
+      [student, 'Find an example'],
+      [peer, 'Compare two sources'],
+    ] as const) {
+      const { body: individual } = await call<Submission>(
+        'PUT',
+        `/api/assignments/${manual.id}/work`,
+        {
+          cookie: account.cookie,
+          payload: {
+            stage: 'goals',
+            action: 'advance',
+            version: 0,
+            changes: { personalGoals: { writing: [goal], ai: [] } },
+          },
+        }
+      )
+      assert.equal(individual.stage, 'outline')
+    }
+    for (const [account, goal] of [
+      [student, 'Find an example'],
+      [peer, 'Compare two sources'],
+    ] as const) {
+      const { body: individual } = await call<{ submission: Submission }>(
+        'GET',
+        `/api/assignments/${manual.id}`,
+        { cookie: account.cookie }
+      )
+      assert.deepEqual(individual.submission.work.personalGoals, {
+        writing: [goal],
+        ai: [],
+      })
+    }
     await call('GET', path, { cookie: outsider.cookie, status: 404 })
     const save = async (
       stage: Submission['stage'],
@@ -543,9 +630,54 @@ test('Chinese and English course papers from class creation to feedback', async 
     const edit = await save('reflect', 'reviseAgain', reflect.version, {
       reflection: 'Added evidence',
     })
+    if (language === 'zh-CN') {
+      const lookup = `${path}/reference-doi`
+      const payload = {
+        doi: 'https://doi.org/10.1234/SYNTHETIC-COURSE-EXAMPLE',
+      }
+      await call('POST', lookup, {
+        cookie: outsider.cookie,
+        payload,
+        status: 403,
+      })
+      const { body: record } = await call<{
+        title: string
+        verified: boolean
+        authors: { family: string }[]
+      }>('POST', lookup, { cookie: student.cookie, payload })
+      assert.equal(record.title, 'Synthetic source')
+      assert.equal(record.authors[0].family, 'Lee')
+      assert.equal(record.verified, false)
+      await call('POST', lookup, {
+        cookie: student.cookie,
+        payload,
+        status: 429,
+      })
+      assert.equal(doiRequests, 1)
+    }
     const finalDocument = paragraph(
       language === 'en' ? 'Evidence supports the claim.' : '证据支持论点。'
     )
+    const source = {
+      id: randomUUID(),
+      kind: 'article',
+      title: 'Synthetic bilingual course sample',
+      authors: [{ family: 'Lee', given: 'Ada' }],
+      year: '2024',
+      venue: 'Example Journal',
+      volume: '1',
+      issue: '2',
+      pages: '3–4',
+      url: 'https://example.org/evidence',
+      doi: '',
+      evidence: 'Supports the claim',
+      locator: 'p. 3',
+      verified: true,
+    }
+    finalDocument.content[0].content?.push({
+      type: 'citation',
+      attrs: { sourceId: source.id, locator: source.locator },
+    })
     assert.equal(
       countWriting(finalDocument, language),
       language === 'en' ? 4 : 6
@@ -554,19 +686,32 @@ test('Chinese and English course papers from class creation to feedback', async 
       revision: finalDocument,
       revisionTitle: 'Independent final title',
       checked: [0],
+      sources: [source],
     })
+    await save('revise', 'save', updated.version, { sources: [] }, 400)
     await call('POST', `${path}/reviews`, {
       cookie: student.cookie,
       payload: { task: 'revision', block: 1 },
       status: 400,
     })
-    for (const failure of ['rateLimit', 'empty', 'badExcerpt'] as const) {
+    for (const failure of [
+      'rateLimit',
+      'empty',
+      'badExcerpt',
+      'timeout',
+    ] as const) {
       modelFailure = failure
-      await call('POST', `${path}/reviews`, {
-        cookie: student.cookie,
-        payload: { task: 'revision', version: updated.version, block: 0 },
-        status: 502,
-      })
+      const { body: failureResponse } = await call<{ code: string }>(
+        'POST',
+        `${path}/reviews`,
+        {
+          cookie: student.cookie,
+          payload: { task: 'revision', version: updated.version, block: 0 },
+          status: 502,
+        }
+      )
+      if (failure === 'timeout')
+        assert.equal(failureResponse.code, 'aiTimedOut')
     }
     modelFailure = null
     const { body: review } = await call<AiReview>('POST', `${path}/reviews`, {
@@ -615,7 +760,13 @@ test('Chinese and English course papers from class creation to feedback', async 
     assert.equal(rechecked.work.revisionTitle, 'Independent final title')
     assert.deepEqual(rechecked.work.revision, finalDocument)
     assert.equal(rechecked.work.reflection, 'Added evidence')
-    const submitted = await save('reflect', 'submit', rechecked.version, {})
+    await save('reflect', 'submit', rechecked.version, {}, 400)
+    let submitted = await save('reflect', 'submit', rechecked.version, {
+      aiDeclaration: {
+        used: true,
+        description: 'Used the course coach to find missing evidence.',
+      },
+    })
     assert.equal(submitted.status, 'submitted')
     const dashboardAssignment = async (cookie: string) => {
       const { body } = await call<{ assignments: AssignmentListItem[] }>(
@@ -705,16 +856,217 @@ test('Chinese and English course papers from class creation to feedback', async 
     )
     await call('GET', submissionPath, { cookie: peer.cookie, status: 403 })
     await call('GET', submissionPath, { cookie: outsider.cookie, status: 404 })
+    await call('GET', `${submissionPath}/export`, {
+      cookie: outsider.cookie,
+      status: 404,
+    })
+    const exported = await app.inject({
+      method: 'GET',
+      url: `${submissionPath}/export`,
+      headers: { origin, cookie: teacher.cookie },
+    })
+    assert.equal(exported.statusCode, 200)
+    assert.match(exported.headers['content-type'] ?? '', /wordprocessingml/)
+    assert.equal(exported.rawPayload.subarray(0, 2).toString(), 'PK')
+    const draftGrade = {
+      submissionVersion: submitted.version,
+      version: 0,
+      input: {
+        scores: [null],
+        feedback: 'Review in progress',
+        criteriaFeedback: ['Check evidence'],
+        annotations: [{ block: 0, criterion: 0, text: 'Draft comment.' }],
+      },
+    }
+    const draftPath = `${submissionPath}/grade-draft`
+    await call('PUT', draftPath, {
+      cookie: peer.cookie,
+      payload: draftGrade,
+      status: 403,
+    })
+    await call('PUT', draftPath, {
+      cookie: outsider.cookie,
+      payload: draftGrade,
+      status: 404,
+    })
+    await call('PUT', draftPath, {
+      cookie: teacher.cookie,
+      payload: draftGrade,
+    })
+    await call('PUT', draftPath, {
+      cookie: teacher.cookie,
+      payload: draftGrade,
+      status: 409,
+    })
+    const { body: reopenedGrade } = await call<{ gradeDraft: unknown }>(
+      'GET',
+      submissionPath,
+      { cookie: teacher.cookie }
+    )
+    assert.deepEqual(reopenedGrade.gradeDraft, { ...draftGrade, version: 1 })
+    const { body: studentView } = await call<{ submission: Submission }>(
+      'GET',
+      path,
+      { cookie: student.cookie }
+    )
+    assert.equal(studentView.submission.grade, null)
+    assert.equal('gradeDraft' in studentView.submission, false)
+    await call('PUT', draftPath, {
+      cookie: teacher.cookie,
+      payload: {
+        ...draftGrade,
+        version: 1,
+        input: { ...draftGrade.input, scores: [8] },
+      },
+    })
     const { body: assessment } = await call<AiReview>(
       'POST',
       `${path}/reviews`,
       {
         cookie: teacher.cookie,
-        payload: { task: 'assessment', submissionId: submitted.id },
+        payload: {
+          task: 'assessment',
+          submissionId: submitted.id,
+          calibrate: true,
+        },
         status: 201,
       }
     )
     assert.deepEqual(assessment.result.scores, [7])
+    assert.equal(assessment.result.suggestions[0].criterion, 0)
+    assert.deepEqual(assessment.calibration, {
+      baseline: [8],
+      evidence: [null],
+    })
+    const calibrationPath = `${path}/reviews/${assessment.id}/calibration`
+    await call('PUT', calibrationPath, {
+      cookie: peer.cookie,
+      payload: { evidence: [true] },
+      status: 403,
+    })
+    await call('PUT', calibrationPath, {
+      cookie: teacher.cookie,
+      payload: { evidence: [true] },
+    })
+    const peers = `${path}/peers`
+    await call('GET', peers, { cookie: outsider.cookie, status: 404 })
+    const { body: pairing } = await call<{ id: string }>('POST', peers, {
+      cookie: teacher.cookie,
+      payload: {
+        action: 'assign',
+        submissionId: submitted.id,
+        reviewerId: peer.id,
+        version: submitted.version,
+      },
+    })
+    const readPeers = async (cookie: string) =>
+      (await call<PeerReviewDirectory>('GET', peers, { cookie })).body
+    assert.deepEqual(
+      (await readPeers(peer.cookie)).reviews[0].paper?.doc,
+      finalDocument
+    )
+    assert.equal(
+      (await readPeers(peer.cookie)).reviews[0].paper?.references[0].evidence,
+      ''
+    )
+    assert.equal((await readPeers(student.cookie)).reviews[0].paper, undefined)
+    const feedback = {
+      action: 'feedback',
+      reviewId: pairing.id,
+      feedback: {
+        criterion: 0,
+        comment: 'The evidence is clear.',
+        improvement: 'Add a second example.',
+      },
+    }
+    await call('POST', peers, {
+      cookie: student.cookie,
+      payload: feedback,
+      status: 409,
+    })
+    await call('POST', peers, { cookie: peer.cookie, payload: feedback })
+    assert.deepEqual(
+      (await readPeers(student.cookie)).reviews[0].feedback,
+      feedback.feedback
+    )
+    await call('POST', peers, {
+      cookie: student.cookie,
+      payload: {
+        action: 'report',
+        reviewId: pairing.id,
+        reason: 'Check the example.',
+      },
+    })
+    assert.equal((await readPeers(student.cookie)).reviews[0].feedback, null)
+    assert.equal(
+      (await readPeers(teacher.cookie)).reviews[0].reportReason,
+      'Check the example.'
+    )
+    await call('POST', peers, {
+      cookie: teacher.cookie,
+      payload: { action: 'resolve', reviewId: pairing.id },
+    })
+    assert.deepEqual(
+      (await readPeers(student.cookie)).reviews[0].feedback,
+      feedback.feedback
+    )
+
+    const returnPath = `${submissionPath}/return`
+    const returnData = {
+      version: submitted.version,
+      draftVersion: 2,
+      reason: 'Explain the source more clearly.',
+      dueAt: new Date(Date.now() + 10800_000).toISOString(),
+    }
+    await call('POST', returnPath, {
+      cookie: outsider.cookie,
+      payload: returnData,
+      status: 404,
+    })
+    await call('POST', returnPath, {
+      cookie: teacher.cookie,
+      payload: returnData,
+    })
+    await call('POST', returnPath, {
+      cookie: teacher.cookie,
+      payload: returnData,
+      status: 409,
+    })
+    const { body: reopened } = await call<{
+      assignment: Assignment
+      submission: Submission
+      previousReviews: AiReview[]
+    }>('GET', path, { cookie: student.cookie })
+    assert.equal(reopened.assignment.dueAt, returnData.dueAt)
+    assert.equal(reopened.submission.stage, 'revise')
+    assert.deepEqual(reopened.submission.returned?.work.revision, finalDocument)
+    assert.equal(reopened.previousReviews[0].decisions[0].choice, 'accepted')
+    assert.equal(
+      (await dashboardAssignment(teacher.cookie))?.progress?.draft,
+      1
+    )
+    const secondDocument = structuredClone(finalDocument)
+    secondDocument.content[0].content?.push({
+      type: 'text',
+      text: language === 'en' ? ' A second example.' : ' 补充例证。',
+    })
+    const secondReflect = await save(
+      'revise',
+      'advance',
+      reopened.submission.version,
+      { revision: secondDocument }
+    )
+    submitted = await save('reflect', 'submit', secondReflect.version, {
+      reflection: 'I added a second example.',
+      aiDeclaration: { used: false, description: '' },
+    })
+    assert.deepEqual(submitted.returned?.work.revision, finalDocument)
+    assert.deepEqual(submitted.work.revision, secondDocument)
+    await call('POST', returnPath, {
+      cookie: teacher.cookie,
+      payload: { ...returnData, version: submitted.version, draftVersion: 0 },
+      status: 409,
+    })
     await call('PUT', `${submissionPath}/grade`, {
       cookie: teacher.cookie,
       payload: { scores: [11], feedback: 'Feedback' },
@@ -735,13 +1087,18 @@ test('Chinese and English course papers from class creation to feedback', async 
       criteriaFeedback: ['Strong evidence'],
       annotations: [{ block: 0, criterion: 0, text: 'Explain this evidence.' }],
     }
+    const publish = {
+      ...grade,
+      submissionVersion: submitted.version,
+      draftVersion: 0,
+    }
     const concurrent = await Promise.all(
       [1, 2].map(() =>
         app.inject({
           method: 'PUT',
           url: `${submissionPath}/grade`,
           headers: { origin, cookie: teacher.cookie },
-          payload: grade,
+          payload: publish,
         })
       )
     )
@@ -749,10 +1106,9 @@ test('Chinese and English course papers from class creation to feedback', async 
       concurrent.map((reply) => reply.statusCode).sort(),
       [200, 409]
     )
-    const [gradeMessage, ...duplicates] = await readNotifications(
-      student.cookie,
-      assignment.id
-    )
+    const [gradeMessage, ...duplicates] = (
+      await readNotifications(student.cookie, assignment.id)
+    ).filter((item) => item.kind === 'grade')
     assert.equal(gradeMessage.kind, 'grade')
     assert.equal(gradeMessage.readAt, null)
     assert.equal(duplicates.length, 0)
@@ -770,7 +1126,9 @@ test('Chinese and English course papers from class creation to feedback', async 
       cookie: student.cookie,
     })
     assert.ok(
-      (await readNotifications(student.cookie, assignment.id))[0].readAt
+      (await readNotifications(student.cookie, assignment.id)).find(
+        (item) => item.id === gradeMessage.id
+      )?.readAt
     )
     const { body: graded } = await call<{ submission: Submission }>(
       'GET',
@@ -784,7 +1142,7 @@ test('Chinese and English course papers from class creation to feedback', async 
     )
     assert.deepEqual(graded.submission.grade, grade)
     assert.deepEqual(graded.submission.work.draft, firstDocument)
-    assert.deepEqual(graded.submission.work.revision, finalDocument)
+    assert.deepEqual(graded.submission.work.revision, secondDocument)
     await call('DELETE', `${coursePath}/students/${student.id}`, {
       cookie: teacher.cookie,
       payload: { confirmed: true },
@@ -825,6 +1183,16 @@ test('Chinese and English course papers from class creation to feedback', async 
     { id: string; submissionCount: number }[]
   >('GET', '/api/admin/assignments', { cookie: admin.cookie })
   assert.ok(assigned.some((item) => item.submissionCount === 1))
+  await call('GET', '/api/admin/diagnostics', {
+    cookie: teacher.cookie,
+    status: 403,
+  })
+  const { body: diagnostics } = await call<{ model: { outcome: string }[] }>(
+    'GET',
+    '/api/admin/diagnostics',
+    { cookie: admin.cookie }
+  )
+  assert.ok(diagnostics.model.some((item) => item.outcome === 'aiRateLimited'))
   await call('PATCH', `/api/admin/users/${teacher.id}`, {
     cookie: admin.cookie,
     payload: {

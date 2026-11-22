@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import type { Identity } from '@writing/writing'
+import {
+  courseProgresses,
+  type CourseProgress,
+  type Identity,
+} from '@writing/writing'
 import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Main } from '@/components/layout/main'
-import { classesKey, dashboardKey, request } from './api'
-import { ManagementDialog, ManagementTable } from './management-ui'
+import { classesKey, dashboardKey, dashboardOptions, request } from './api'
+import { ManagementDialog, ManagementTable, selectField } from './management-ui'
 import { Field, Problem } from './ui'
 
 export type Member = { id: string; name: string; email: string }
@@ -63,9 +67,74 @@ export function ClassPage({
         </div>
       )}
       {detail.isSuccess && (
-        <ClassRoster detail={detail.data} refresh={refresh} />
+        <>
+          <ClassRoster detail={detail.data} refresh={refresh} />
+          {person.role === 'teacher' && !detail.data.classroom.archived && (
+            <ClassProgress classId={classId} personId={person.id} />
+          )}
+        </>
       )}
     </Main>
+  )
+}
+
+function ClassProgress({
+  classId,
+  personId,
+}: {
+  classId: string
+  personId: string
+}) {
+  const { t } = useTranslation()
+  const [status, setStatus] = useState<CourseProgress>('submitted')
+  const dashboard = useQuery(dashboardOptions(personId))
+  const assignments =
+    dashboard.data?.assignments.filter(
+      (item) => item.classroomId === classId && item.progress?.[status]
+    ) ?? []
+  return (
+    <section className='space-y-3 rounded-xl border bg-card p-4'>
+      <h2 className='font-semibold'>{t('courseTasks')}</h2>
+      <select
+        aria-label={t('courseTasks')}
+        className={selectField}
+        value={status}
+        onChange={(event) => setStatus(event.target.value as CourseProgress)}
+      >
+        {courseProgresses.map((item) => (
+          <option key={item} value={item}>
+            {t(item === 'draft' ? 'draftStatus' : item)}
+          </option>
+        ))}
+      </select>
+      {dashboard.isPending ? (
+        <p role='status'>{t('loading')}</p>
+      ) : dashboard.isError ? (
+        <Problem error={dashboard.error} />
+      ) : assignments.length ? (
+        <ul className='divide-y'>
+          {assignments.map((item) => (
+            <li
+              key={item.id}
+              className='flex justify-between gap-2 py-2 text-sm'
+            >
+              <Link
+                className='text-primary underline'
+                to='/assignments/$assignmentId'
+                params={{ assignmentId: item.id }}
+              >
+                {item.title}
+              </Link>
+              <span>{item.progress?.[status]}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className='text-sm text-muted-foreground'>
+          {t('noProgressMatches')}
+        </p>
+      )}
+    </section>
   )
 }
 
