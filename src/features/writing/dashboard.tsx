@@ -484,6 +484,7 @@ function AssignmentForm({
                 .filter(Boolean),
           rubric,
           aiPolicy,
+          aiDebate: values.get('aiDebate') === 'on',
         }
       )
       await client.invalidateQueries({ queryKey: dashboardKey })
@@ -560,6 +561,10 @@ function AssignmentForm({
           defaultValue={localDue}
         />
       </Field>
+      <label className='flex items-center gap-2 text-sm'>
+        <Checkbox name='aiDebate' defaultChecked={initial?.aiDebate ?? false} />
+        {t('documents.allowAiDebate')}
+      </label>
       <Field label={t('instructions')}>
         <Textarea
           name='instructions'

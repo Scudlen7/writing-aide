@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Ref } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link,
@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import type { Identity } from '@writing/writing'
 import {
+  ArrowLeft,
   Bell,
   BookOpen,
   ClipboardCheck,
@@ -20,7 +21,9 @@ import {
   Users,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -42,6 +45,7 @@ import { NavGroup } from '@/components/layout/nav-group'
 import { NavUser } from '@/components/layout/nav-user'
 import type { NavLink } from '@/components/layout/types'
 import { chatUnreadOptions } from '@/features/chats/api'
+import { DocumentToolSlot } from '@/features/documents/document-tool-slot'
 import {
   dashboardOptions,
   identityKey,
@@ -57,6 +61,26 @@ export function WritingShell({ person }: { person: Identity }) {
     from: '/_authenticated/assignments/$assignmentId/',
     shouldThrow: false,
   })
+  const section = useLocation({
+    select: ({ pathname }) => pathname.split('/')[1],
+  })
+  const [summarySlot, setSummarySlot] = useState<HTMLDivElement | null>(null)
+
+  if (section === 'documents' || section === 'review-discussions') {
+    return (
+      <DocumentToolSlot value={summarySlot}>
+        <div className='writing-app @container/content flex min-h-dvh flex-col bg-background'>
+          <SkipToMain />
+          <WritingHeader
+            personalSection={section}
+            showSidebarTrigger={false}
+            summarySlotRef={setSummarySlot}
+          />
+          <Outlet />
+        </div>
+      </DocumentToolSlot>
+    )
+  }
 
   if (person.role === 'student' && assignment) {
     return (
@@ -89,21 +113,79 @@ function SkipToMain() {
 function WritingHeader({
   title,
   showSidebarTrigger,
+  personalSection,
+  summarySlotRef,
 }: {
-  title: string
+  title?: string
   showSidebarTrigger?: boolean
+  personalSection?: 'documents' | 'review-discussions'
+  summarySlotRef?: Ref<HTMLDivElement>
 }) {
   const { t } = useTranslation()
   return (
     <Header
-      className='shrink-0 border-b bg-card'
+      fixed={Boolean(personalSection)}
+      className={cn(
+        'shrink-0 border-b bg-card',
+        personalSection && 'h-auto sm:h-16 [&>div]:flex-wrap [&>div]:gap-y-2'
+      )}
       triggerLabel={t('toggleSidebar')}
       showSidebarTrigger={showSidebarTrigger}
     >
-      <span className='hidden font-medium sm:inline'>{title}</span>
+      {personalSection ? (
+        <>
+          <Button asChild variant='ghost' size='icon' className='shrink-0'>
+            <Link to='/' aria-label={t('documents.backToWorkspace')}>
+              <ArrowLeft />
+            </Link>
+          </Button>
+          <nav
+            aria-label={t('documents.personal')}
+            className='order-last flex basis-full gap-1 sm:order-none sm:basis-auto'
+          >
+            <Button
+              asChild
+              size='sm'
+              variant={personalSection === 'documents' ? 'secondary' : 'ghost'}
+            >
+              <Link
+                to='/documents'
+                aria-current={
+                  personalSection === 'documents' ? 'location' : undefined
+                }
+              >
+                {t('documents.title')}
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size='sm'
+              variant={
+                personalSection === 'review-discussions' ? 'secondary' : 'ghost'
+              }
+            >
+              <Link
+                to='/review-discussions'
+                aria-current={
+                  personalSection === 'review-discussions'
+                    ? 'location'
+                    : undefined
+                }
+              >
+                {t('documents.reviewInbox')}
+              </Link>
+            </Button>
+          </nav>
+        </>
+      ) : (
+        <span className='hidden font-medium sm:inline'>{title}</span>
+      )}
       <div className='ms-auto flex items-center gap-1 sm:gap-2'>
         <LanguageSwitch />
         <WritingThemeSwitch />
+        {personalSection && (
+          <div ref={summarySlotRef} className='empty:hidden' />
+        )}
       </div>
     </Header>
   )
@@ -174,6 +256,23 @@ function CourseShell({ person }: { person: Identity }) {
         </SidebarHeader>
         <SidebarContent className='px-3'>
           <WritingNavigation person={person} />
+          <NavGroup
+            title={t('documents.personal')}
+            items={[
+              {
+                title: t('documents.title'),
+                url: '/documents',
+                icon: BookOpen,
+                activePrefix: '/documents',
+              },
+              {
+                title: t('documents.reviewInbox'),
+                url: '/review-discussions',
+                icon: MessagesSquare,
+                activePrefix: '/review-discussions',
+              },
+            ]}
+          />
         </SidebarContent>
         <SidebarFooter className='border-t px-3 py-4'>
           <NavUser

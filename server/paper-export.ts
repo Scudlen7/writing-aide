@@ -16,7 +16,8 @@ import { citedSources, type Language, type Work } from '../shared/writing.ts'
 export function exportPaper(
   work: Work,
   language: Language,
-  submittedAt: Date | null
+  submittedAt: Date | null,
+  includeExportStatus = true
 ) {
   const zh = language === 'zh-CN'
   const hasRevision = Boolean(
@@ -84,9 +85,13 @@ export function exportPaper(
       {
         children: [
           new Paragraph({ text: title, heading: HeadingLevel.TITLE }),
-          new Paragraph(
-            `${status} · ${zh ? '导出时间' : 'Exported'} ${generatedAt}`
-          ),
+          ...(includeExportStatus
+            ? [
+                new Paragraph(
+                  `${status} · ${zh ? '导出时间' : 'Exported'} ${generatedAt}`
+                ),
+              ]
+            : []),
           ...blocks,
           ...(bibliography.length
             ? [

@@ -28,13 +28,17 @@ export const Route = createRootRouteWithContext<{
         '/grading',
         '/chats',
         '/notifications',
+        '/documents',
+        '/review-discussions',
         '/settings',
         '/settings/account',
         '/settings/appearance',
         '/settings/notifications',
       ].includes(path) &&
       !path.startsWith('/assignments/') &&
-      !path.startsWith('/classes/')
+      !path.startsWith('/classes/') &&
+      !path.startsWith('/documents/') &&
+      !path.startsWith('/review-discussions/')
     ) {
       throw redirect({ to: '/' })
     }

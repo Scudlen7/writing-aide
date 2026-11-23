@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import type { PeerReviewDirectory, PeerReviewItem } from '@writing/peer'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ReviewerPicker,
+  type ReviewerSelection,
+} from '@/features/documents/reviewer-picker'
+import { ReviewList } from '@/features/documents/reviews'
 import { request } from './api'
 import { PaperText } from './editor'
 import { selectField } from './management-ui'
@@ -19,7 +25,13 @@ export function PeerPanel({
 }) {
   const { t } = useTranslation()
   const client = useQueryClient()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [submissionId, setSubmissionId] = useState('')
+  const [reviewers, setReviewers] = useState<ReviewerSelection>({
+    query: '',
+    selected: [],
+  })
   const [confirm, setConfirm] = useState<{
     action: 'decline' | 'revoke'
     reviewId: string
@@ -31,12 +43,30 @@ export function PeerPanel({
     queryKey: key,
     queryFn: () => request<PeerReviewDirectory>(path),
   })
+  const target = data.data?.submissions?.find(
+    (item) => item.id === submissionId
+  )
   const change = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       request(path, 'POST', payload),
-    onSuccess: async () => {
+    onSuccess: async (_result, action) => {
       setConfirm(null)
+      if (action.action === 'assign') setReviewers({ query: '', selected: [] })
       await client.invalidateQueries({ queryKey: key })
+    },
+  })
+  const discussion = useMutation({
+    mutationFn: (peerId: string) =>
+      request<{ id: string }>(
+        `/api/assignments/${assignmentId}/review-discussions`,
+        'POST',
+        { peerId }
+      ),
+    onSuccess: ({ id }) => {
+      void navigate({
+        to: '/review-discussions/$threadId',
+        params: { threadId: id },
+      })
     },
   })
   return (
@@ -51,30 +81,30 @@ export function PeerPanel({
         <div className='space-y-4 border-t p-4 text-sm'>
           {data.isPending && <p role='status'>{t('loading')}</p>}
           <Problem error={data.error} />
-          {!confirm && <Problem error={change.error} />}
+          {!confirm && <Problem error={change.error ?? discussion.error} />}
           {data.data?.students && !data.data.readOnly && (
             <form
               className='grid gap-3'
               onSubmit={(event) => {
                 event.preventDefault()
-                const form = new FormData(event.currentTarget)
-                const target = data.data?.submissions?.find(
-                  (item) => item.id === form.get('submission')
-                )
-                if (target)
+                const reviewer = reviewers.selected[0]
+                if (target && reviewer && !change.isPending)
                   change.mutate({
                     action: 'assign',
                     submissionId: target.id,
                     version: target.version,
-                    reviewerId: form.get('reviewer'),
+                    reviewerId: reviewer.id,
                   })
               }}
             >
               <Field label={t('peerAuthor')}>
                 <select
                   className={selectField}
-                  name='submission'
-                  defaultValue=''
+                  value={submissionId}
+                  onChange={(event) => {
+                    setSubmissionId(event.target.value)
+                    setReviewers({ query: '', selected: [] })
+                  }}
                   required
                 >
                   <option value='' disabled>
@@ -87,26 +117,26 @@ export function PeerPanel({
                   ))}
                 </select>
               </Field>
-              <Field label={t('peerReviewer')}>
-                <select
-                  className={selectField}
-                  name='reviewer'
-                  defaultValue=''
-                  required
-                >
-                  <option value='' disabled>
-                    {t('selectDecision')}
-                  </option>
-                  {data.data.students.map((item) => (
-                    <option value={item.id} key={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <ReviewerPicker
+                scope={
+                  target
+                    ? {
+                        assignmentId,
+                        submissionId: target.id,
+                        version: target.version,
+                      }
+                    : undefined
+                }
+                value={reviewers}
+                onChange={setReviewers}
+                limit={1}
+                disabled={change.isPending}
+              />
               <Button
                 type='submit'
-                disabled={change.isPending || !data.data.submissions?.length}
+                disabled={
+                  change.isPending || !target || !reviewers.selected.length
+                }
               >
                 {t('assignPeer')}
               </Button>
@@ -116,19 +146,44 @@ export function PeerPanel({
             <p className='text-muted-foreground'>{t('noPeerReviews')}</p>
           )}
           {data.data?.reviews.map((review) => (
-            <PeerReview
-              key={review.id}
-              review={review}
-              busy={change.isPending || data.data!.readOnly}
-              onAction={(action, fields = {}) =>
-                change.mutate({ reviewId: review.id, action, ...fields })
-              }
-              onConfirm={(action) => {
-                change.reset()
-                setConfirm({ action, reviewId: review.id })
-              }}
-            />
+            <div key={review.id} className='grid gap-2'>
+              <PeerReview
+                review={review}
+                busy={change.isPending || data.data!.readOnly}
+                onAction={(action, fields = {}) =>
+                  change.mutate({ reviewId: review.id, action, ...fields })
+                }
+                onConfirm={(action) => {
+                  change.reset()
+                  setConfirm({ action, reviewId: review.id })
+                }}
+              />
+              {!data.data!.readOnly &&
+                ['assigned', 'submitted'].includes(review.status) && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    onClick={() => discussion.mutate(review.id)}
+                    disabled={discussion.isPending}
+                  >
+                    {t('documents.openDiscussion')}
+                  </Button>
+                )}
+            </div>
           ))}
+          <ReviewList
+            assignment={assignmentId}
+            courseOptions={
+              !data.data?.readOnly &&
+              data.data?.students &&
+              data.data?.submissions
+                ? {
+                    students: data.data.students,
+                    submissions: data.data.submissions,
+                  }
+                : data.data?.authorDebate
+            }
+          />
           <ConfirmDialog
             open={Boolean(confirm)}
             onOpenChange={(value) => {

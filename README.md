@@ -8,6 +8,7 @@
 - 教师可以维护班级名单、编辑和复制作业。学生从站内通知进入成绩与反馈，查看分项评语和正文批注。
 - 同班学生与任课教师可通过侧栏发送一对一文字私信。失去最后一个共同班级后，会话隐藏，恢复共同班级后可以继续查看。
 - 配置模型服务后，可使用提纲反馈、修改建议和按评分标准预评。学生能记录是否采纳修改建议及理由，教师决定最终分数。
+- 「我的文档」提供私有文件库，可上传 Word、PDF 和 Markdown，搜索正文、管理版本、发起指定版本的审阅和独立辅助写作。启用 ONLYOFFICE Docs 后可在桌面浏览器编辑 DOCX，移动端可查看和下载。PDF 查看器为只读。
 
 ## 本地运行
 
@@ -41,6 +42,12 @@ pnpm dev --host localhost --port 5173 --strictPort
 
 用户主动请求反馈时，后端会将作业要求、评分项和对应的提纲或稿件内容发给所配置的模型服务。API 密钥只配置在后端。未配置时，师生可以照常写作、提交和人工批改。
 
+## 私有存储与 Word
+
+先运行 `pnpm db:migrate`。文档数据默认保存在 `document-storage/`，可用 `DOCUMENT_STORAGE` 指定应用专用目录。恢复时请将同一时间点的数据库和文件目录成套恢复。开发环境默认每个文件 25 MiB、每个账号 1 GiB，未接受的邀请 7 天到期。
+
+`OFFICE_URL` 是浏览器和 API 都能访问的 ONLYOFFICE Docs 地址，`OFFICE_APP_URL` 是文档服务回连 API 的地址。将 `OFFICE_SECRET` 设为部署时生成的随机值，并在 Office 服务中启用同一个 JWT 密钥。部署时应配好 HTTPS、限制容器网络访问、安装试点所需中文字体，并实际验证下载、保存和回调。社区版的移动端能力按官方说明验收。 [ONLYOFFICE 安全配置](https://api.onlyoffice.com/docs/docs-api/get-started/how-it-works/security) · [移动端集成](https://api.onlyoffice.com/docs/docs-api/get-started/how-it-works/mobile-integration)
+
 ## 构建与检查
 
 ```sh
@@ -51,7 +58,7 @@ pnpm test
 pnpm build
 ```
 
-写作流程集成测试使用独立的 PostgreSQL 测试库。将 `DATABASE_URL` 和 `TEST_DATABASE_URL` 指向同一个以 `_test` 结尾的数据库，运行 `pnpm db:migrate`，再运行 `node --test server/course-flow.integration.ts`。测试使用本地模拟模型服务。
+集成测试使用独立的 PostgreSQL 测试库。将 `DATABASE_URL` 和 `TEST_DATABASE_URL` 指向同一个以 `_test` 结尾的数据库，运行 `pnpm db:migrate`，再运行 `node --test --test-concurrency=1 server/course-flow.integration.ts server/documents.integration.ts`。文档测试使用临时文件目录，请为测试库关闭其他运行中的 API 实例。测试使用本地模拟模型服务。
 
 部署时，将 `APP_ORIGIN` 设为应用的公开 HTTPS 地址，将 `NODE_ENV` 设为 `production`，运行数据库迁移后执行 `pnpm start`。Fastify 在同一个域名下提供 `dist/` 前端和 API。默认绑定 `127.0.0.1:3001`，可通过 `HOST` 和 `PORT` 配置。
 

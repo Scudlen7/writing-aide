@@ -1,0 +1,380 @@
+const labels = {
+  personal: ['个人空间', 'Personal'],
+  backToWorkspace: ['返回工作台', 'Back to workspace'],
+  toolSummary: ['摘要面板', 'Panel summary'],
+  minimizeTool: ['最小化到摘要面板', 'Minimize to panel summary'],
+  closeTool: ['关闭弹窗', 'Close dialog'],
+  noMinimizedTools: ['暂无最小化的弹窗。', 'No minimized dialogs.'],
+  aiResponding: ['AI 正在生成回复…', 'AI is composing a reply…'],
+  noDebates: ['此版本暂无 AI 辩论。', 'No AI debates for this version yet.'],
+  debateDraft: ['新建首轮对话', 'Start a new debate'],
+  noWritingAdvice: [
+    '此阶段暂无 AI 写作建议。',
+    'No AI writing feedback for this stage yet.',
+  ],
+  title: ['我的文档', 'My documents'],
+  trash: ['回收站', 'Trash'],
+  upload: ['上传', 'Upload'],
+  createWord: ['新建 Word', 'New Word document'],
+  createWriting: ['辅助写作', 'Guided writing'],
+  drop: ['拖放文件到此处，或点击选择文件', 'Drop files here or choose files'],
+  filters: ['文档筛选', 'Document filters'],
+  search: [
+    '搜索标题、文件名、标签或正文',
+    'Search titles, filenames, tags or text',
+  ],
+  formats: ['所有格式', 'All formats'],
+  tags: ['标签', 'Tags'],
+  allTags: ['所有标签', 'All tags'],
+  tagsHint: ['用逗号分隔标签', 'Separate tags with commas'],
+  sort: ['排序', 'Sort'],
+  titleOrder: ['按标题', 'By title'],
+  newest: ['最近更新', 'Newest updates'],
+  oldest: ['最早更新', 'Oldest updates'],
+  updated: ['更新时间', 'Updated'],
+  updatedAfter: ['更新日期从', 'Updated since'],
+  cards: ['卡片视图', 'Card view'],
+  list: ['列表视图', 'List view'],
+  name: ['标题', 'Title'],
+  actions: ['操作', 'Actions'],
+  empty: ['没有符合条件的文档。', 'No documents match.'],
+  count: ['共 {{count}} 份文档', '{{count}} documents'],
+  pagination: ['文档分页', 'Document pagination'],
+  previous: ['上一页', 'Previous'],
+  next: ['下一页', 'Next'],
+  paperLanguage: ['稿件语言', 'Manuscript language'],
+  create: ['创建', 'Create'],
+  download: ['下载', 'Download'],
+  downloadOriginal: ['下载原件', 'Download original'],
+  moveToTrash: ['移入回收站', 'Move to trash'],
+  restoreTrash: ['还原文档', 'Restore document'],
+  delete: ['永久删除', 'Delete permanently'],
+  trashConfirm: [
+    '移入回收站会停止索引检索和现有审阅授权。还原后可以重新邀请。',
+    'Moving this document to trash removes it from text search and revokes review access. You can invite reviewers again after restoring it.',
+  ],
+  deleteConfirm: [
+    '将永久删除全部版本、文件及 {{count}} 条审阅讨论。此操作无法撤销。',
+    'All versions, files, and {{count}} review discussions will be permanently deleted. This action cannot be undone.',
+  ],
+  preview: ['预览', 'Preview'],
+  version: ['版本 {{number}}', 'Version {{number}}'],
+  versions: ['版本历史', 'Version history'],
+  history: ['历史版本', 'Historical version'],
+  backToCurrent: ['返回当前版本', 'Back to current version'],
+  restoreVersion: ['恢复版本', 'Restore version'],
+  restoreConfirm: [
+    '保存选中版本的内容为一个新版本。',
+    'Save the selected content as a new version.',
+  ],
+  uploadVersion: ['上传新版本', 'Upload new version'],
+  retryIndex: ['重试正文索引', 'Retry text indexing'],
+  details: ['文档信息', 'Document details'],
+  renameTags: ['重命名或编辑标签', 'Rename or edit tags'],
+  saveDetails: ['保存', 'Save'],
+  noText: ['此版本没有可搜索的文本。', 'This version has no searchable text.'],
+  saveCopy: ['另存副本', 'Save a copy'],
+  leaveUnsaved: [
+    '有未保存的改动。确定离开？',
+    'You have unsaved changes. Leave this page?',
+  ],
+  saving: ['正在保存…', 'Saving…'],
+  unsaved: ['有未保存的改动', 'Unsaved changes'],
+  markdownSource: ['Markdown 源码', 'Markdown source'],
+  pdfError: [
+    '无法打开 PDF。可下载原件检查文件。',
+    'The PDF could not be opened. Download the original to check the file.',
+  ],
+  pdfPassword: ['PDF 密码', 'PDF password'],
+  wrongPdfPassword: ['密码不正确。', 'The password is incorrect.'],
+  pdfUnlock: ['解锁查看', 'Unlock'],
+  pdfFind: ['在 PDF 中查找', 'Find in PDF'],
+  page: ['页码', 'Page'],
+  zoomOut: ['缩小', 'Zoom out'],
+  zoomIn: ['放大', 'Zoom in'],
+  fitPage: ['适合宽度', 'Fit width'],
+  outline: ['提纲', 'Outline'],
+  previewWord: ['预览 Word', 'Preview Word'],
+  editWord: ['编辑 Word', 'Edit Word'],
+  saveWord: ['保存 Word 版本', 'Save Word version'],
+  closeWord: ['关闭 Word', 'Close Word'],
+  wordReady: ['编辑后可保存 Word 版本。', 'Save a Word version after editing.'],
+  wordSaving: [
+    '等待 Word 服务回写版本…',
+    'Waiting for the Word service to save the version…',
+  ],
+  wordConflict: [
+    '当前版本已更新。本次编辑保留在版本历史中，可查看并恢复。',
+    'The current version changed. Your edits are in version history, where you can view or restore them.',
+  ],
+  conflict: ['冲突版本', 'Conflicting version'],
+  convertHint: [
+    '将旧版 DOC 转为可编辑的 DOCX，原件保留在版本历史。',
+    'Convert this legacy DOC to an editable DOCX. The original stays in version history.',
+  ],
+  convert: ['转换为 DOCX', 'Convert to DOCX'],
+  writingGoal: ['写作目标', 'Writing goal'],
+  writingReflection: ['写作复盘', 'Writing reflection'],
+  generateWord: ['生成 Word 版本', 'Generate Word version'],
+  editableCopy: ['另存为可编辑 Word', 'Save as editable Word'],
+  copySuffix: ['副本', 'Copy'],
+  latestWord: ['下载最新 Word 版本', 'Download latest Word version'],
+  newerWriting: [
+    '当前写作稿尚未生成对应的 Word 版本。',
+    'The current writing draft has no matching Word version.',
+  ],
+  copyHint: [
+    '可编辑的 Word 副本与此写作稿独立。',
+    'An editable Word copy is independent of this writing draft.',
+  ],
+  saveCourseCopy: ['保存到我的文档', 'Save to my documents'],
+  openCopy: ['打开个人副本', 'Open personal copy'],
+  aiWriting: ['AI 写作建议', 'AI writing feedback'],
+  sendToAi: [
+    '发送显示的文本以获取建议',
+    'Send the displayed text for feedback',
+  ],
+  reviewInbox: ['受邀审阅', 'Review inbox'],
+  discussions: ['审阅讨论', 'Review discussions'],
+  invite: ['邀请审阅', 'Invite reviewers'],
+  openDiscussion: ['展开对话审阅', 'Open review discussion'],
+  noReviews: ['暂无审阅讨论。', 'No review discussions yet.'],
+  mode: ['审阅方式', 'Review mode'],
+  reviewerSearch: ['搜索审阅人', 'Find reviewers'],
+  reviewerSearchPlaceholder: [
+    '输入邮箱或用户名',
+    'Search by email or username',
+  ],
+  reviewerSearchResults: ['审阅人搜索结果', 'Matching reviewers'],
+  noMatchingReviewers: [
+    '没有找到匹配的审阅人。',
+    'No matching reviewers found.',
+  ],
+  reviewersSelected: ['已选审阅人', 'Selected reviewers'],
+  removeReviewer: ['移除 {{name}}（{{email}}）', 'Remove {{name}} ({{email}})'],
+  reviewerSelectionLimit: [
+    '最多可选择 {{limit}} 位审阅人。',
+    'Select up to {{limit}} reviewers.',
+  ],
+  debateReviewersRequired: [
+    '真人辩论至少要选择两位审阅人。',
+    'A peer debate requires at least two reviewers.',
+  ],
+  participants: ['参与者', 'Participants'],
+  discussionParticipants: ['参与讨论者', 'Discussion participants'],
+  discussionArea: ['讨论区', 'Discussion'],
+  noDiscussionMessages: ['还没有讨论留言。', 'No comments yet.'],
+  revokeSelected: ['撤销所选人员的权限', 'Revoke access for selected people'],
+  quoteParagraph: ['引用第 {{number}} 段', 'Quote paragraph {{number}}'],
+  topic: ['议题或希望重点审阅的问题', 'Topic or question for reviewers'],
+  sendInvite: ['发送邀请', 'Send invitations'],
+  invitationPending: ['待接受', 'Invitation pending'],
+  accept: ['接受邀请', 'Accept invitation'],
+  reject: ['拒绝邀请', 'Decline invitation'],
+  reviewText: ['审阅版本正文', 'Text for this review version'],
+  paragraph: ['段落', 'Paragraph'],
+  selectQuote: ['选择要引用的文字', 'Select text to quote'],
+  wholeDocument: ['全文意见', 'Whole-document comment'],
+  reply: ['回复', 'Reply'],
+  comment: ['发表意见', 'Post comment'],
+  commentPrompts: ['查看评论提示', 'Review prompts'],
+  prompts: [
+    '作者的主张是什么？证据支持这个结论吗？是否有反例或适用条件？',
+    'What is the author’s claim? Does the evidence support it? Are there counterexamples or limits?',
+  ],
+  roleLabel: ['本次发言职责', 'Role for this message'],
+  freeReply: ['自由发言', 'Free response'],
+  rubricItem: ['评分项', 'Rubric criterion'],
+  recordDecision: ['记录处理决定', 'Record decision'],
+  reason: ['理由', 'Reason'],
+  followUpVersion: [
+    '后续保存版本号（可选）',
+    'Later saved version number (optional)',
+  ],
+  report: ['报告', 'Report'],
+  reported: [
+    '该意见已报告，待教师处理。',
+    'This comment was reported and awaits instructor review.',
+  ],
+  resolveReport: ['处理报告', 'Resolve report'],
+  end: ['结束讨论', 'Close discussion'],
+  ended: ['已结束', 'Closed'],
+  resolution: [
+    '记录分歧和下一版处理计划',
+    'Record disagreements and plans for the next version',
+  ],
+  humanDebate: ['真人辩论', 'Peer debate'],
+  aiDebate: ['AI 辩论', 'AI debate'],
+  allowAiDebate: [
+    '允许学生主动使用 AI 辩论',
+    'Allow students to start AI debates',
+  ],
+  openDebate: ['打开 AI 辩论', 'Open AI debate'],
+  hideDebate: ['收起 AI 辩论', 'Hide AI debate'],
+  debateUnavailable: [
+    '此文稿暂无法运行 AI 辩论。',
+    'AI debate is currently unavailable for this manuscript.',
+  ],
+  debateHistory: ['辩论记录', 'Debate history'],
+  newDebate: ['新议题', 'New topic'],
+  modelInput: [
+    '模型读取议题、以下选段和本次 AI 辩论的前文。',
+    'The model receives the topic, this excerpt, and earlier turns from this AI debate.',
+  ],
+  startDebate: ['发送并开始首轮', 'Send and start round one'],
+  nextRound: ['发送并运行本轮', 'Send and run this round'],
+  resumeDebate: ['继续本轮', 'Resume this round'],
+  followUp: ['追问或补充证据', 'Follow-up question or additional evidence'],
+  round: ['第 {{round}} 轮', 'Round {{round}}'],
+  stopDebate: ['停止后续请求', 'Stop further requests'],
+  stepFailed: [
+    '此角色请求失败，可以继续本轮重试。',
+    'This role failed. Resume the round to retry.',
+  ],
+  shareAi: [
+    '分享这一条到真人讨论',
+    'Share this message with the review discussion',
+  ],
+}
+
+const groups = {
+  format: {
+    docx: ['Word', 'Word'],
+    doc: ['旧版 Word', 'Legacy Word'],
+    pdf: ['PDF', 'PDF'],
+    md: ['Markdown', 'Markdown'],
+    writing: ['辅助写作', 'Guided writing'],
+  },
+  role: {
+    support: ['支持论证', 'Support'],
+    challenge: ['质疑证据', 'Challenge'],
+    clarify: ['追问澄清', 'Clarify'],
+    summarize: ['归纳分歧', 'Synthesize'],
+  },
+  decision: {
+    pending: ['待处理', 'Pending'],
+    accepted: ['采纳', 'Accepted'],
+    partial: ['部分采纳', 'Partly accepted'],
+    declined: ['不采纳', 'Declined'],
+  },
+  member: {
+    author: ['文档作者', 'Author'],
+    host: ['讨论发起人', 'Discussion host'],
+    pending: ['待接受', 'Pending'],
+    accepted: ['已接受', 'Accepted'],
+    rejected: ['已拒绝', 'Declined'],
+    revoked: ['已撤回', 'Revoked'],
+  },
+  pdfMatch: {
+    searching: ['正在查找…', 'Searching…'],
+    missing: ['没有找到匹配的文本。', 'No matching text.'],
+    found: ['已跳到匹配页面。', 'Jumped to a matching page.'],
+  },
+}
+
+const errors = {
+  documentActiveContent: [
+    '文件含宏或自动加载的外部内容。请移除后重新上传。',
+    'The file contains macros or automatically loaded external content. Remove it and upload again.',
+  ],
+  documentDamaged: [
+    '文件损坏或超出解析上限。',
+    'The file is damaged or exceeds the parsing limit.',
+  ],
+  documentFileTooLarge: [
+    '文件超过上传上限。',
+    'The file exceeds the upload limit.',
+  ],
+  documentFormatMismatch: [
+    '文件实际格式与扩展名或当前文档格式不符。',
+    'The file contents do not match its extension or the current document format.',
+  ],
+  documentParserBusy: [
+    '文件解析繁忙，请重试。',
+    'Document processing is busy. Try again.',
+  ],
+  documentParserFailed: [
+    '暂时无法提取正文。仍可下载原件。',
+    'Text extraction is unavailable. The original is still available to download.',
+  ],
+  documentPasswordProtected: [
+    'PDF 已加密。可在查看器中输入密码。',
+    'This PDF is encrypted. Enter the password in the viewer.',
+  ],
+  documentQuotaExceeded: [
+    '个人文档库容量不足。',
+    'Your document library is over its storage quota.',
+  ],
+  documentUnsupportedFormat: [
+    '请选择 DOCX、DOC、PDF 或 Markdown 文件。',
+    'Choose a DOCX, DOC, PDF, or Markdown file.',
+  ],
+  documentUploadExpired: [
+    '本次上传已过期，请重新上传。',
+    'This upload expired. Upload the file again.',
+  ],
+  documentVersionConflict: [
+    '其他窗口已保存更新。可另存副本，或重新打开最新版本。',
+    'Another window saved a newer version. Save a copy or reopen the latest version.',
+  ],
+  documentWritingSource: [
+    '请在辅助写作区编辑正文。',
+    'Edit the manuscript in the guided writing workspace.',
+  ],
+  officeConversionFailed: [
+    'DOC 转换失败。可下载原件或重试。',
+    'DOC conversion failed. Download the original or retry.',
+  ],
+  officeSaveFailed: [
+    'Word 未能回写版本，请重试保存。',
+    'Word did not save a version. Please retry.',
+  ],
+  officeSavePending: [
+    '上一项 Word 保存仍在进行。',
+    'The previous Word save is still in progress.',
+  ],
+  officeUnavailable: [
+    'Word 服务暂不可用。可下载最近保存的版本。',
+    'The Word service is unavailable. You can download the last saved version.',
+  ],
+  reviewInviteUnavailable: [
+    '所选审阅人可能已无法受邀，请重新搜索并选择。真人辩论至少需要两位审阅人。',
+    'Some selected reviewers may no longer be eligible. Search and select them again. A peer debate requires at least two reviewers.',
+  ],
+  debateOrder: [
+    '请先完成前一个角色，再继续本轮。',
+    'Complete the previous role before continuing the round.',
+  ],
+}
+
+const notifications = {
+  reviewInvited: [
+    '《{{title}}》有一条审阅邀请',
+    'Review invitation for “{{title}}”',
+  ],
+  reviewComment: [
+    '《{{title}}》收到审阅意见',
+    'New review comment on “{{title}}”',
+  ],
+  reviewReply: [
+    '《{{title}}》的审阅讨论有回复',
+    'New review reply on “{{title}}”',
+  ],
+}
+
+export function documentMessages(language: 0 | 1) {
+  const translate = (pairs: Record<string, string[]>) =>
+    Object.fromEntries(
+      Object.entries(pairs).map(([key, values]) => [key, values[language]])
+    )
+  return {
+    documents: {
+      ...translate(labels),
+      ...Object.fromEntries(
+        Object.entries(groups).map(([key, values]) => [key, translate(values)])
+      ),
+    },
+    errors: translate(errors),
+    notifications: translate(notifications),
+  }
+}

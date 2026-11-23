@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { and, desc, eq, isNotNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { Readable } from 'node:stream'
 import { doiSchema, referenceReady } from '../shared/references.ts'
 import {
   aiTasks,
@@ -38,6 +39,8 @@ import {
 } from './assignments.ts'
 import { config } from './config.ts'
 import { db, type Transaction } from './db.ts'
+import { storeFile } from './document-storage.ts'
+import { createDocument } from './documents.ts'
 import { ApiError, read } from './errors.ts'
 import { identity } from './identity.ts'
 import { studentCount } from './management.ts'
@@ -90,6 +93,24 @@ function ownSubmission(id: string, studentId: string) {
     eq(submission.assignmentId, id),
     eq(submission.studentId, studentId)
   )
+}
+
+async function studentExport(id: string, student: Identity, previous?: '1') {
+  const row = await accessibleAssignment(id, student)
+  const [own] = await db
+    .select(submissionFields)
+    .from(submission)
+    .where(ownSubmission(id, student.id))
+  if (!own || (previous && !own.returned)) throw new ApiError(404, 'notFound')
+  const attempt = previous ? own.returned : null
+  return {
+    work: attempt?.work ?? own.work,
+    language:
+      attempt?.requirements.language ??
+      own.requirements?.language ??
+      row.language,
+    submittedAt: attempt ? new Date(attempt.submittedAt) : own.submittedAt,
+  }
 }
 
 function visibleSubmission(id: string, submissionId: string) {
@@ -651,21 +672,8 @@ export async function writingRoutes(app: FastifyInstance) {
       z.object({ previous: z.literal('1').optional() }),
       request.query
     )
-    const row = await accessibleAssignment(id, student)
-    const [own] = await db
-      .select(submissionFields)
-      .from(submission)
-      .where(ownSubmission(id, student.id))
-    if (!own) throw new ApiError(404, 'notFound')
-    if (previous && !own.returned) throw new ApiError(404, 'notFound')
-    const attempt = previous ? own.returned : null
-    const file = exportPaper(
-      attempt?.work ?? own.work,
-      attempt?.requirements.language ??
-        own.requirements?.language ??
-        row.language,
-      attempt ? new Date(attempt.submittedAt) : own.submittedAt
-    )
+    const text = await studentExport(id, student, previous)
+    const file = exportPaper(text.work, text.language, text.submittedAt)
     return reply
       .header('Cache-Control', 'private, no-store')
       .header(
@@ -676,6 +684,36 @@ export async function writingRoutes(app: FastifyInstance) {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       )
       .send(await file.buffer)
+  })
+
+  app.post('/api/assignments/:id/export', async (request, reply) => {
+    const student = await identity(request, 'student')
+    const { id } = read(assignmentParams, request.params)
+    const { previous } = read(
+      z.object({ previous: z.literal('1').optional() }),
+      request.query
+    )
+    const text = await studentExport(id, student, previous)
+    const file = exportPaper(text.work, text.language, text.submittedAt, false)
+    const candidate = await storeFile(
+      Readable.from([await file.buffer]),
+      'docx'
+    )
+    const filename = decodeURIComponent(file.filename).replace(
+      /[\\/\p{Cc}]/gu,
+      '_'
+    )
+    return reply
+      .code(201)
+      .send(
+        await createDocument(
+          student.id,
+          filename.slice(0, -5),
+          filename,
+          'course',
+          candidate
+        )
+      )
   })
 
   app.get(

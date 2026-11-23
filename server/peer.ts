@@ -87,6 +87,30 @@ export async function peerRoutes(app: FastifyInstance) {
           students.map((student) => [student.id, student.name])
         )
         const reviews: PeerReviewItem[] = []
+        const ownAssignments = rows.filter(
+          ({ item, target }) =>
+            target.studentId === person.id &&
+            target.status !== 'draft' &&
+            target.version === item.submissionVersion &&
+            ['assigned', 'submitted'].includes(item.status) &&
+            active.has(item.reviewerId)
+        )
+        const authorDebate =
+          ownAssignments.length >= 2
+            ? {
+                students: ownAssignments.map(({ item }) => ({
+                  id: item.reviewerId,
+                  name: active.get(item.reviewerId)!,
+                })),
+                submissions: [
+                  {
+                    id: ownAssignments[0].target.id,
+                    version: ownAssignments[0].target.version,
+                    name: person.name,
+                  },
+                ],
+              }
+            : undefined
         for (const { item, target, author } of rows) {
           const current =
             target.version === item.submissionVersion &&
@@ -148,6 +172,7 @@ export async function peerRoutes(app: FastifyInstance) {
         return {
           reviews,
           readOnly: row.archived,
+          ...(authorDebate ? { authorDebate } : {}),
           ...(teacher
             ? {
                 students,

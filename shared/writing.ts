@@ -144,6 +144,7 @@ export const assignmentInput = z
     maxLength: z.number().int().min(1).max(30000),
     checklist: z.array(z.string().trim().min(1).max(250)).max(12),
     rubric: z.array(rubricSchema).min(1).max(12),
+    aiDebate: z.boolean().optional(),
     aiPolicy: z
       .array(z.enum(aiTasks))
       .max(aiTasks.length)
@@ -343,16 +344,28 @@ export const notificationKinds = [
   'grade',
   'assignmentChanged',
   'submission',
+  'reviewInvited',
+  'reviewComment',
+  'reviewReply',
 ] as const
-export interface Notification {
+export type Notification = {
   id: string
-  kind: (typeof notificationKinds)[number]
-  assignmentId: string
-  assignmentTitle: string
-  submissionId: string | null
   createdAt: string
   readAt: string | null
-}
+} & (
+  | {
+      kind: 'reviewInvited' | 'reviewComment' | 'reviewReply'
+      reviewThreadId: string
+      reviewTitle: string
+      assignmentId?: never
+    }
+  | {
+      kind: 'grade' | 'returned' | 'assignmentChanged' | 'submission'
+      assignmentId: string
+      assignmentTitle: string
+      submissionId: string | null
+    }
+)
 export type AssignmentListItem = Assignment & {
   status: Submission['status'] | null
   stage: Stage | null

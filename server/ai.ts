@@ -11,6 +11,51 @@ export const aiEnabled = Boolean(
   config.AI_BASE_URL && config.AI_API_KEY && config.AI_MODEL
 )
 
+export async function requestModel(
+  system: string,
+  input: unknown,
+  maxTokens: number
+): Promise<unknown> {
+  if (!aiEnabled) throw new ApiError(503, 'aiDisabled')
+  try {
+    const response = await fetch(
+      `${config.AI_BASE_URL!.replace(/\/$/, '')}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.AI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: config.AI_MODEL,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: JSON.stringify(input) },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: maxTokens,
+          ...(new URL(config.AI_BASE_URL!).hostname === 'api.deepseek.com'
+            ? { thinking: { type: 'disabled' } }
+            : {}),
+        }),
+        signal: AbortSignal.timeout(45000),
+      }
+    )
+    if (response.status === 429) throw new ApiError(502, 'aiRateLimited')
+    if (!response.ok) throw new Error('Model request failed')
+    const payload = await response.json()
+    return JSON.parse(payload.choices[0].message.content)
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (
+      error instanceof Error &&
+      ['AbortError', 'TimeoutError'].includes(error.name)
+    )
+      throw new ApiError(502, 'aiTimedOut')
+    throw new ApiError(502, 'aiFailed')
+  }
+}
+
 const instructions: Record<AiTask, string> = {
   outline:
     'Review the student outline for task coverage, organization and missing evidence. Ask actionable questions.',
@@ -55,35 +100,7 @@ export async function reviewWriting(
   ].join(' ')
 
   try {
-    const response = await fetch(
-      `${config.AI_BASE_URL!.replace(/\/$/, '')}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: config.AI_MODEL,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: JSON.stringify(input) },
-          ],
-          response_format: { type: 'json_object' },
-          max_tokens: 3500,
-          ...(new URL(config.AI_BASE_URL!).hostname === 'api.deepseek.com'
-            ? { thinking: { type: 'disabled' } }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(45000),
-      }
-    )
-    if (response.status === 429) throw new ApiError(502, 'aiRateLimited')
-    if (!response.ok) throw new Error('Model request failed')
-    const payload = await response.json()
-    const result = aiResultSchema.parse(
-      JSON.parse(payload.choices[0].message.content)
-    )
+    const result = aiResultSchema.parse(await requestModel(system, input, 3500))
     if (task !== 'assessment') {
       delete result.scores
       if (

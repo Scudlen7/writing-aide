@@ -5,9 +5,14 @@ import path from 'node:path'
 import { auth } from './auth.ts'
 import { chatRoutes } from './chat.ts'
 import { config } from './config.ts'
+import { debateRoutes } from './debate.ts'
+import { discussionRoutes } from './discussions.ts'
+import { documentRoutes } from './documents.ts'
 import { ApiError } from './errors.ts'
 import { managementRoutes } from './management.ts'
+import { officeRoutes } from './office.ts'
 import { peerRoutes } from './peer.ts'
+import { personalWritingRoutes } from './personal-writing.ts'
 import { settingsRoutes } from './settings.ts'
 import { writingRoutes } from './writing.ts'
 
@@ -15,7 +20,16 @@ export function createApp(
   options: { logger?: boolean; serveFrontend?: boolean } = {}
 ) {
   const app = fastify({
-    logger: options.logger ?? false,
+    logger: options.logger
+      ? {
+          serializers: {
+            req: (request) => ({
+              method: request.method,
+              url: request.url?.split('?')[0],
+            }),
+          },
+        }
+      : false,
     trustProxy: 'loopback',
   })
 
@@ -29,7 +43,15 @@ export function createApp(
       typeof error.statusCode === 'number'
         ? error.statusCode
         : 500
-    if (status >= 500) request.log.error(error)
+    if (status >= 500) {
+      if (
+        /^\/api\/(documents|office|review-discussions|ai-debates)(?:\/|\?|$)/u.test(
+          request.url
+        )
+      )
+        request.log.error({ status }, 'Personal writing request failed')
+      else request.log.error(error)
+    }
     return reply
       .status(status)
       .send({ code: status >= 500 ? 'serverError' : 'invalidInput' })
@@ -40,7 +62,11 @@ export function createApp(
     reply.header('Cache-Control', 'no-store')
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-      request.headers.origin !== config.APP_ORIGIN
+      request.headers.origin !== config.APP_ORIGIN &&
+      !(
+        request.method === 'POST' &&
+        /^\/api\/office\/callback\/[a-f0-9-]{36}$/u.test(request.url)
+      )
     ) {
       throw new ApiError(403, 'forbidden')
     }
@@ -80,6 +106,11 @@ export function createApp(
   app.register(chatRoutes)
   app.register(managementRoutes)
   app.register(settingsRoutes)
+  app.register(documentRoutes)
+  app.register(officeRoutes)
+  app.register(personalWritingRoutes)
+  app.register(discussionRoutes)
+  app.register(debateRoutes)
 
   if (options.serveFrontend) {
     app.register(fastifyStatic, { root: path.resolve('dist'), wildcard: false })
