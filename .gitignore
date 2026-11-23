@@ -17,6 +17,7 @@ dist-ssr
 # Local project references
 /docs/
 /AGENTS.md
+/document-storage/
 
 # Editor directories and files
 .vscode/*

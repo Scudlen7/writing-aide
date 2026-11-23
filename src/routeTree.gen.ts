@@ -31,7 +31,9 @@ import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authen
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedReviewDiscussionsIndexRouteImport } from './routes/_authenticated/review-discussions/index'
 import { Route as AuthenticatedHelpCenterIndexRouteImport } from './routes/_authenticated/help-center/index'
+import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents/index'
 import { Route as AuthenticatedClassesIndexRouteImport } from './routes/_authenticated/classes/index'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats/index'
 import { Route as AuthenticatedAppsIndexRouteImport } from './routes/_authenticated/apps/index'
@@ -43,7 +45,9 @@ import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes
 import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedReviewDiscussionsThreadIdRouteImport } from './routes/_authenticated/review-discussions/$threadId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedDocumentsDocumentIdRouteImport } from './routes/_authenticated/documents/$documentId'
 import { Route as AuthenticatedClassesClassIdRouteImport } from './routes/_authenticated/classes/$classId'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminClassesRouteImport } from './routes/_authenticated/admin/classes'
@@ -161,10 +165,22 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedReviewDiscussionsIndexRoute =
+  AuthenticatedReviewDiscussionsIndexRouteImport.update({
+    id: '/review-discussions/',
+    path: '/review-discussions/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedHelpCenterIndexRoute =
   AuthenticatedHelpCenterIndexRouteImport.update({
     id: '/help-center/',
     path: '/help-center/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDocumentsIndexRoute =
+  AuthenticatedDocumentsIndexRouteImport.update({
+    id: '/documents/',
+    path: '/documents/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedClassesIndexRoute =
@@ -228,10 +244,22 @@ const AuthenticatedSettingsAccountRoute =
     path: '/account',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedReviewDiscussionsThreadIdRoute =
+  AuthenticatedReviewDiscussionsThreadIdRouteImport.update({
+    id: '/review-discussions/$threadId',
+    path: '/review-discussions/$threadId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
     path: '/errors/$error',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDocumentsDocumentIdRoute =
+  AuthenticatedDocumentsDocumentIdRouteImport.update({
+    id: '/documents/$documentId',
+    path: '/documents/$documentId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedClassesClassIdRoute =
@@ -293,7 +321,9 @@ export interface FileRoutesByFullPath {
   '/admin/classes': typeof AuthenticatedAdminClassesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/classes/$classId': typeof AuthenticatedClassesClassIdRoute
+  '/documents/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/review-discussions/$threadId': typeof AuthenticatedReviewDiscussionsThreadIdRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -305,7 +335,9 @@ export interface FileRoutesByFullPath {
   '/apps/': typeof AuthenticatedAppsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
   '/classes/': typeof AuthenticatedClassesIndexRoute
+  '/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/review-discussions/': typeof AuthenticatedReviewDiscussionsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -331,7 +363,9 @@ export interface FileRoutesByTo {
   '/admin/classes': typeof AuthenticatedAdminClassesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/classes/$classId': typeof AuthenticatedClassesClassIdRoute
+  '/documents/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/review-discussions/$threadId': typeof AuthenticatedReviewDiscussionsThreadIdRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -343,7 +377,9 @@ export interface FileRoutesByTo {
   '/apps': typeof AuthenticatedAppsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
   '/classes': typeof AuthenticatedClassesIndexRoute
+  '/documents': typeof AuthenticatedDocumentsIndexRoute
   '/help-center': typeof AuthenticatedHelpCenterIndexRoute
+  '/review-discussions': typeof AuthenticatedReviewDiscussionsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -375,7 +411,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/classes': typeof AuthenticatedAdminClassesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/classes/$classId': typeof AuthenticatedClassesClassIdRoute
+  '/_authenticated/documents/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/review-discussions/$threadId': typeof AuthenticatedReviewDiscussionsThreadIdRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -387,7 +425,9 @@ export interface FileRoutesById {
   '/_authenticated/apps/': typeof AuthenticatedAppsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
   '/_authenticated/classes/': typeof AuthenticatedClassesIndexRoute
+  '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
   '/_authenticated/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/_authenticated/review-discussions/': typeof AuthenticatedReviewDiscussionsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -417,7 +457,9 @@ export interface FileRouteTypes {
     | '/admin/classes'
     | '/admin/users'
     | '/classes/$classId'
+    | '/documents/$documentId'
     | '/errors/$error'
+    | '/review-discussions/$threadId'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -429,7 +471,9 @@ export interface FileRouteTypes {
     | '/apps/'
     | '/chats/'
     | '/classes/'
+    | '/documents/'
     | '/help-center/'
+    | '/review-discussions/'
     | '/settings/'
     | '/tasks/'
     | '/users/'
@@ -455,7 +499,9 @@ export interface FileRouteTypes {
     | '/admin/classes'
     | '/admin/users'
     | '/classes/$classId'
+    | '/documents/$documentId'
     | '/errors/$error'
+    | '/review-discussions/$threadId'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -467,7 +513,9 @@ export interface FileRouteTypes {
     | '/apps'
     | '/chats'
     | '/classes'
+    | '/documents'
     | '/help-center'
+    | '/review-discussions'
     | '/settings'
     | '/tasks'
     | '/users'
@@ -498,7 +546,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/classes'
     | '/_authenticated/admin/users'
     | '/_authenticated/classes/$classId'
+    | '/_authenticated/documents/$documentId'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/review-discussions/$threadId'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
     | '/_authenticated/settings/display'
@@ -510,7 +560,9 @@ export interface FileRouteTypes {
     | '/_authenticated/apps/'
     | '/_authenticated/chats/'
     | '/_authenticated/classes/'
+    | '/_authenticated/documents/'
     | '/_authenticated/help-center/'
+    | '/_authenticated/review-discussions/'
     | '/_authenticated/settings/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
@@ -689,11 +741,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/review-discussions/': {
+      id: '/_authenticated/review-discussions/'
+      path: '/review-discussions'
+      fullPath: '/review-discussions/'
+      preLoaderRoute: typeof AuthenticatedReviewDiscussionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/help-center/': {
       id: '/_authenticated/help-center/'
       path: '/help-center'
       fullPath: '/help-center/'
       preLoaderRoute: typeof AuthenticatedHelpCenterIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/documents/': {
+      id: '/_authenticated/documents/'
+      path: '/documents'
+      fullPath: '/documents/'
+      preLoaderRoute: typeof AuthenticatedDocumentsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/classes/': {
@@ -773,11 +839,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/review-discussions/$threadId': {
+      id: '/_authenticated/review-discussions/$threadId'
+      path: '/review-discussions/$threadId'
+      fullPath: '/review-discussions/$threadId'
+      preLoaderRoute: typeof AuthenticatedReviewDiscussionsThreadIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
       path: '/errors/$error'
       fullPath: '/errors/$error'
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/documents/$documentId': {
+      id: '/_authenticated/documents/$documentId'
+      path: '/documents/$documentId'
+      fullPath: '/documents/$documentId'
+      preLoaderRoute: typeof AuthenticatedDocumentsDocumentIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/classes/$classId': {
@@ -872,11 +952,15 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedClassesClassIdRoute: typeof AuthenticatedClassesClassIdRoute
+  AuthenticatedDocumentsDocumentIdRoute: typeof AuthenticatedDocumentsDocumentIdRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedReviewDiscussionsThreadIdRoute: typeof AuthenticatedReviewDiscussionsThreadIdRoute
   AuthenticatedAppsIndexRoute: typeof AuthenticatedAppsIndexRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
   AuthenticatedClassesIndexRoute: typeof AuthenticatedClassesIndexRoute
+  AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
   AuthenticatedHelpCenterIndexRoute: typeof AuthenticatedHelpCenterIndexRoute
+  AuthenticatedReviewDiscussionsIndexRoute: typeof AuthenticatedReviewDiscussionsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedAssignmentsAssignmentIdIndexRoute: typeof AuthenticatedAssignmentsAssignmentIdIndexRoute
@@ -890,11 +974,17 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedClassesClassIdRoute: AuthenticatedClassesClassIdRoute,
+  AuthenticatedDocumentsDocumentIdRoute: AuthenticatedDocumentsDocumentIdRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedReviewDiscussionsThreadIdRoute:
+    AuthenticatedReviewDiscussionsThreadIdRoute,
   AuthenticatedAppsIndexRoute: AuthenticatedAppsIndexRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
   AuthenticatedClassesIndexRoute: AuthenticatedClassesIndexRoute,
+  AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
   AuthenticatedHelpCenterIndexRoute: AuthenticatedHelpCenterIndexRoute,
+  AuthenticatedReviewDiscussionsIndexRoute:
+    AuthenticatedReviewDiscussionsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedAssignmentsAssignmentIdIndexRoute:

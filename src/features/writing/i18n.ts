@@ -1,5 +1,6 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
+import { documentMessages } from '@/features/documents/messages'
 
 const zh = {
   admin: '管理员',
@@ -970,8 +971,27 @@ const en: typeof zh = {
 }
 
 const selected = localStorage.getItem('writing-aide-language')
+const documentsZh = documentMessages(0)
+const documentsEn = documentMessages(1)
 void i18n.use(initReactI18next).init({
-  resources: { 'zh-CN': { translation: zh }, en: { translation: en } },
+  resources: {
+    'zh-CN': {
+      translation: {
+        ...zh,
+        documents: documentsZh.documents,
+        error: { ...zh.error, ...documentsZh.errors },
+        notification: { ...zh.notification, ...documentsZh.notifications },
+      },
+    },
+    en: {
+      translation: {
+        ...en,
+        documents: documentsEn.documents,
+        error: { ...en.error, ...documentsEn.errors },
+        notification: { ...en.notification, ...documentsEn.notifications },
+      },
+    },
+  },
   lng: selected === 'en' ? 'en' : 'zh-CN',
   fallbackLng: 'zh-CN',
   interpolation: { escapeValue: false },

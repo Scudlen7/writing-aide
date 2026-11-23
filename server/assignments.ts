@@ -25,6 +25,7 @@ export const assignmentFields = {
   checklist: assignment.checklist,
   rubric: assignment.rubric,
   aiPolicy: assignment.aiPolicy,
+  aiDebate: assignment.aiDebate,
   archived: sql<boolean>`(${assignment.archived} or ${classroom.archived})`,
   updatedAt: assignment.updatedAt,
 }
@@ -126,8 +127,12 @@ export async function updateAssignment(
   const row = await assignmentForWrite(tx, id, person)
   if (classroomId !== undefined && classroomId !== row.classroomId)
     throw new ApiError(400, 'fixedClassroom')
-  const current = assignmentRequirements(row)
-  input = { ...input, aiPolicy: input.aiPolicy ?? current.aiPolicy }
+  const current = { ...assignmentRequirements(row), aiDebate: row.aiDebate }
+  input = {
+    ...input,
+    aiPolicy: input.aiPolicy ?? current.aiPolicy,
+    aiDebate: input.aiDebate ?? current.aiDebate,
+  }
   if (!input.aiPolicy) delete input.aiPolicy
   const dueAt = new Date(input.dueAt)
   if (isDeepStrictEqual(current, { ...input, dueAt: dueAt.toISOString() }))

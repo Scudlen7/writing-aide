@@ -65,7 +65,18 @@ export function NotificationsPage({ person }: { person: Identity }) {
                 >
                   <div className='min-w-0 space-y-1'>
                     <div className='flex flex-wrap items-center gap-2'>
-                      {item.kind === 'submission' && item.submissionId ? (
+                      {'reviewThreadId' in item ? (
+                        <Link
+                          className='font-medium wrap-break-word hover:underline'
+                          to='/review-discussions/$threadId'
+                          params={{ threadId: item.reviewThreadId }}
+                          onClick={onOpen}
+                        >
+                          {t(`notification.${item.kind}`, {
+                            title: item.reviewTitle,
+                          })}
+                        </Link>
+                      ) : item.kind === 'submission' && item.submissionId ? (
                         <Link
                           className='font-medium wrap-break-word hover:underline'
                           to='/assignments/$assignmentId/submissions/$submissionId'

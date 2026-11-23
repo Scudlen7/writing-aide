@@ -37,5 +37,9 @@ export interface PeerReviewDirectory {
   reviews: PeerReviewItem[]
   students?: { id: string; name: string }[]
   submissions?: { id: string; version: number; name: string }[]
+  authorDebate?: {
+    students: { id: string; name: string }[]
+    submissions: { id: string; version: number; name: string }[]
+  }
   readOnly: boolean
 }

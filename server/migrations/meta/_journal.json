@@ -43,6 +43,41 @@
       "when": 1795326112990,
       "tag": "0005_teaching_workflows",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795431166685,
+      "tag": "0006_v3_personal_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795431493500,
+      "tag": "0007_v3_word_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795432043327,
+      "tag": "0008_v3_review_discussions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795432506898,
+      "tag": "0009_v3_ai_debates",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795433847782,
+      "tag": "0010_v3_save_retry_limits",
+      "breakpoints": true
     }
   ]
 }

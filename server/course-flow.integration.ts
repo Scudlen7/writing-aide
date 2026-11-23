@@ -11,6 +11,7 @@ import {
   type ChatHistory,
   type ChatMessage,
 } from '../shared/chat.ts'
+import type { ReviewerCandidate } from '../shared/discussions.ts'
 import type { PeerReviewDirectory } from '../shared/peer.ts'
 import type {
   AiReview,
@@ -950,15 +951,45 @@ test('Chinese and English course papers from class creation to feedback', async 
     })
     const peers = `${path}/peers`
     await call('GET', peers, { cookie: outsider.cookie, status: 404 })
+    const reviewerSearch = `${path}/reviewers?${new URLSearchParams({ query: peer.email.slice(0, 12).toUpperCase(), submissionId: submitted.id, version: String(submitted.version) })}`
+    const teacherMatches = (
+      await call<ReviewerCandidate[]>('GET', reviewerSearch, {
+        cookie: teacher.cookie,
+      })
+    ).body
+    assert.deepEqual(
+      teacherMatches.map(({ id }) => id),
+      [peer.id]
+    )
+    assert.notEqual(teacherMatches[0].emailHint, peer.email)
+    assert.deepEqual(
+      (
+        await call<ReviewerCandidate[]>('GET', reviewerSearch, {
+          cookie: student.cookie,
+        })
+      ).body,
+      []
+    )
+    await call('GET', reviewerSearch, { cookie: outsider.cookie, status: 404 })
+    await call('GET', reviewerSearch, { cookie: peer.cookie, status: 404 })
     const { body: pairing } = await call<{ id: string }>('POST', peers, {
       cookie: teacher.cookie,
       payload: {
         action: 'assign',
         submissionId: submitted.id,
-        reviewerId: peer.id,
+        reviewerId: teacherMatches[0].id,
         version: submitted.version,
       },
     })
+    const assignedMatches = (
+      await call<ReviewerCandidate[]>('GET', reviewerSearch, {
+        cookie: student.cookie,
+      })
+    ).body
+    assert.deepEqual(
+      assignedMatches.map(({ id }) => id),
+      [peer.id]
+    )
     const readPeers = async (cookie: string) =>
       (await call<PeerReviewDirectory>('GET', peers, { cookie })).body
     assert.deepEqual(

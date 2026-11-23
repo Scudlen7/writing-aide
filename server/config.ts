@@ -13,5 +13,22 @@ export const config = z
     AI_BASE_URL: z.url().optional(),
     AI_API_KEY: z.string().min(1).optional(),
     AI_MODEL: z.string().min(1).optional(),
+    DOCUMENT_STORAGE: z.string().min(1).default('document-storage'),
+    DOCUMENT_FILE_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100 * 1024 * 1024)
+      .default(25 * 1024 * 1024),
+    DOCUMENT_ACCOUNT_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(1024 * 1024 * 1024),
+    DOCUMENT_INVITE_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+    OFFICE_URL: z.url().optional(),
+    OFFICE_APP_URL: z.url().optional(),
+    OFFICE_SECRET: z.string().min(32).optional(),
   })
   .parse(process.env)

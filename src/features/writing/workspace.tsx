@@ -39,6 +39,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { CourseCopyButton } from '@/features/documents/course-copy'
+import { DebatePanel } from '@/features/documents/debate'
 import { request, RequestError } from './api'
 import {
   PaperEditor,
@@ -253,6 +255,15 @@ export function Workspace({
               className={cn('space-y-3', writingPane)}
             >
               <Requirements assignment={assignment} />
+              {current && <CourseCopyButton assignmentId={assignment.id} />}
+              {assignment.aiDebate && current && (
+                <DebatePanel
+                  target={{
+                    assignmentId: assignment.id,
+                    version: current.version,
+                  }}
+                />
+              )}
               {personId && (
                 <PeerPanel assignmentId={assignment.id} personId={personId} />
               )}
@@ -548,6 +559,15 @@ function StageEditor({
                 </Button>
               )}
             </div>
+          )}
+          {submission && <CourseCopyButton assignmentId={assignment.id} />}
+          {submission && assignment.aiDebate && (
+            <DebatePanel
+              target={{
+                assignmentId: assignment.id,
+                version: submission.version,
+              }}
+            />
           )}
           {hasDoc && (
             <>

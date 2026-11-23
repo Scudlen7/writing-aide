@@ -25,12 +25,14 @@ import { Field, Problem } from './ui'
 
 export function ReferencesPanel({
   assignmentId,
+  lookupPath,
   sources,
   cited,
   onChange,
   onInsert,
 }: {
-  assignmentId: string
+  assignmentId?: string
+  lookupPath?: string
   sources: ReferenceSource[]
   cited: Set<string>
   onChange: (sources: ReferenceSource[]) => void
@@ -156,7 +158,9 @@ export function ReferencesPanel({
           </DialogHeader>
           {editing && (
             <ReferenceForm
-              assignmentId={assignmentId}
+              lookupPath={
+                lookupPath ?? `/api/assignments/${assignmentId}/reference-doi`
+              }
               initial={editing}
               onSave={(source) => {
                 if (
@@ -186,11 +190,11 @@ export function ReferencesPanel({
 }
 
 function ReferenceForm({
-  assignmentId,
+  lookupPath,
   initial,
   onSave,
 }: {
-  assignmentId: string
+  lookupPath: string
   initial: ReferenceSource
   onSave: (source: ReferenceSource) => void
 }) {
@@ -237,11 +241,9 @@ function ReferenceForm({
     }
     setLoading(true)
     try {
-      const fetched = await request<ReferenceSource>(
-        `/api/assignments/${assignmentId}/reference-doi`,
-        'POST',
-        { doi: doi.data }
-      )
+      const fetched = await request<ReferenceSource>(lookupPath, 'POST', {
+        doi: doi.data,
+      })
       setSource((previous) => ({
         ...fetched,
         id: previous.id,

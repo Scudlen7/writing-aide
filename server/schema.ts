@@ -11,7 +11,13 @@ import {
   unique,
   uuid,
   boolean,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import type {
+  DiscussionAnchor,
+  DiscussionDecision,
+  discussionRoles,
+} from '../shared/discussions.ts'
 import {
   peerStates,
   type PeerFeedback,
@@ -151,6 +157,7 @@ export const assignment = pgTable(
       .notNull(),
     rubric: jsonb('rubric').$type<AssignmentInput['rubric']>().notNull(),
     aiPolicy: jsonb('ai_policy').$type<AiTask[]>(),
+    aiDebate: boolean('ai_debate').notNull().default(false),
     archived: boolean('archived').notNull().default(false),
     updatedAt: date('updated_at'),
   },
@@ -233,10 +240,12 @@ export const notification = pgTable(
     recipientId: text('recipient_id')
       .notNull()
       .references(() => user.id),
-    assignmentId: uuid('assignment_id')
-      .notNull()
-      .references(() => assignment.id),
+    assignmentId: uuid('assignment_id').references(() => assignment.id),
     submissionId: uuid('submission_id').references(() => submission.id),
+    reviewThreadId: uuid('review_thread_id').references(
+      (): AnyPgColumn => reviewThread.id,
+      { onDelete: 'cascade' }
+    ),
     kind: text('kind', { enum: notificationKinds }).notNull(),
     eventKey: text('event_key').notNull(),
     createdAt: date('created_at').notNull().defaultNow(),
@@ -245,6 +254,10 @@ export const notification = pgTable(
   (table) => [
     unique().on(table.recipientId, table.eventKey),
     index().on(table.recipientId, table.createdAt),
+    check(
+      'notification_one_target',
+      sql`num_nonnulls(${table.assignmentId}, ${table.reviewThreadId}) = 1`
+    ),
   ]
 )
 
@@ -262,7 +275,7 @@ export const aiRequestEvent = pgTable(
   'ai_request_event',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    task: text('task').$type<AiTask>().notNull(),
+    task: text('task').$type<AiTask | 'debate'>().notNull(),
     model: text('model').notNull(),
     outcome: text('outcome').notNull(),
     durationMs: integer('duration_ms').notNull(),
@@ -295,4 +308,248 @@ export const chatMessage = pgTable(
     index().on(table.senderId, table.recipientId, table.id),
     index().on(table.recipientId, table.senderId, table.id),
   ]
+)
+
+export const personalDocument = pgTable(
+  'personal_document',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => user.id),
+    title: text('title').notNull(),
+    source: text('source', {
+      enum: ['upload', 'word', 'writing', 'course'],
+    }).notNull(),
+    tags: text('tags').array().notNull().default([]),
+    currentVersion: integer('current_version').notNull().default(1),
+    updatedAt: date('updated_at').notNull().defaultNow(),
+    trashedAt: date('trashed_at'),
+  },
+  (table) => [index().on(table.ownerId, table.updatedAt)]
+)
+
+export const personalDocumentFile = pgTable(
+  'personal_document_file',
+  {
+    id: uuid('id').primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => personalDocument.id, { onDelete: 'cascade' }),
+    bytes: integer('bytes').notNull(),
+    digest: text('digest').notNull(),
+    format: text('format', {
+      enum: ['docx', 'doc', 'pdf', 'md', 'writing'],
+    }).notNull(),
+    indexStatus: text('index_status', {
+      enum: ['pending', 'ready', 'empty', 'failed'],
+    })
+      .notNull()
+      .default('pending'),
+    indexText: text('index_text'),
+    searchText: text('search_text'),
+    indexError: text('index_error'),
+    indexLease: date('index_lease'),
+  },
+  (table) => [unique().on(table.documentId, table.digest, table.format)]
+)
+
+export const personalDocumentVersion = pgTable(
+  'personal_document_version',
+  {
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => personalDocument.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(),
+    sourceVersion: integer('source_version'),
+    conflict: boolean('conflict').notNull().default(false),
+    fileId: uuid('file_id')
+      .notNull()
+      .references(() => personalDocumentFile.id),
+    filename: text('filename').notNull(),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => user.id),
+    createdAt: date('created_at').notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.number] })]
+)
+
+export const personalFileCleanup = pgTable('personal_file_cleanup', {
+  id: uuid('id').primaryKey(),
+  after: date('after').notNull().defaultNow(),
+})
+
+export const officeSession = pgTable('office_session', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  documentId: uuid('document_id')
+    .notNull()
+    .references(() => personalDocument.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id')
+    .notNull()
+    .references(() => user.id),
+  version: integer('version').notNull(),
+  savedVersion: integer('saved_version'),
+  mode: text('mode', { enum: ['view', 'edit', 'convert'] }).notNull(),
+  state: text('state', {
+    enum: ['open', 'saved', 'closed', 'failed', 'conflict'],
+  })
+    .notNull()
+    .default('open'),
+  pendingSave: uuid('pending_save'),
+  pendingAt: date('pending_at'),
+  expiresAt: date('expires_at').notNull(),
+  finishedAt: date('finished_at'),
+})
+
+export const reviewThread = pgTable(
+  'review_thread',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentId: uuid('document_id').references(() => personalDocument.id, {
+      onDelete: 'cascade',
+    }),
+    submissionId: uuid('submission_id').references(() => submission.id),
+    peerId: uuid('peer_id')
+      .unique()
+      .references(() => peerReview.id),
+    version: integer('version').notNull(),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => user.id),
+    hostId: text('host_id')
+      .notNull()
+      .references(() => user.id),
+    mode: text('mode', { enum: ['review', 'debate'] }).notNull(),
+    topic: text('topic').notNull(),
+    title: text('title').notNull(),
+    courseParagraphs: jsonb('course_paragraphs').$type<string[]>(),
+    criteria: jsonb('criteria').$type<string[]>().notNull().default([]),
+    endedAt: date('ended_at'),
+    resolution: text('resolution'),
+    createdAt: date('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'review_thread_one_target',
+      sql`num_nonnulls(${table.documentId}, ${table.submissionId}) = 1`
+    ),
+    index().on(table.documentId),
+    index().on(table.submissionId),
+  ]
+)
+
+export const reviewParticipant = pgTable(
+  'review_participant',
+  {
+    threadId: uuid('thread_id')
+      .notNull()
+      .references(() => reviewThread.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => user.id),
+    state: text('state', {
+      enum: ['pending', 'accepted', 'rejected', 'revoked'],
+    })
+      .notNull()
+      .default('pending'),
+    expiresAt: date('expires_at'),
+    updatedAt: date('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.personId] }),
+    index().on(table.personId),
+  ]
+)
+
+export const reviewMessage = pgTable(
+  'review_message',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    threadId: uuid('thread_id')
+      .notNull()
+      .references(() => reviewThread.id, { onDelete: 'cascade' }),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => user.id),
+    body: text('body').notNull(),
+    role: text('role', {
+      enum: ['support', 'challenge', 'clarify', 'summarize'],
+    }).$type<(typeof discussionRoles)[number]>(),
+    replyTo: uuid('reply_to').references((): AnyPgColumn => reviewMessage.id),
+    anchor: jsonb('anchor').$type<DiscussionAnchor>(),
+    decision: jsonb('decision').$type<DiscussionDecision>(),
+    criterion: integer('criterion'),
+    ai: boolean('ai').notNull().default(false),
+    report: jsonb('report').$type<PeerReport>(),
+    createdAt: date('created_at').notNull().defaultNow(),
+  },
+  (table) => [index().on(table.threadId, table.createdAt)]
+)
+
+export const personalAiReview = pgTable(
+  'personal_ai_review',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => personalDocument.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    task: text('task', { enum: ['outline', 'revision'] }).notNull(),
+    source: text('source').notNull(),
+    digest: text('digest').notNull(),
+    result: jsonb('result').$type<AiResult>().notNull(),
+    decisions: jsonb('decisions')
+      .$type<Record<string, Decision>>()
+      .notNull()
+      .default({}),
+    createdAt: date('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    unique().on(table.documentId, table.version, table.task, table.digest),
+  ]
+)
+
+export const aiDebate = pgTable(
+  'ai_debate',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => user.id),
+    documentId: uuid('document_id').references(() => personalDocument.id, {
+      onDelete: 'cascade',
+    }),
+    submissionId: uuid('submission_id').references(() => submission.id),
+    version: integer('version').notNull(),
+    language: text('language', { enum: ['zh-CN', 'en'] }).notNull(),
+    topic: text('topic').notNull(),
+    anchor: jsonb('anchor').$type<DiscussionAnchor>().notNull(),
+    createdAt: date('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'ai_debate_one_target',
+      sql`num_nonnulls(${table.documentId}, ${table.submissionId}) = 1`
+    ),
+    index().on(table.ownerId, table.createdAt),
+  ]
+)
+
+export const aiDebateStep = pgTable(
+  'ai_debate_step',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    debateId: uuid('debate_id')
+      .notNull()
+      .references(() => aiDebate.id, { onDelete: 'cascade' }),
+    round: integer('round').notNull(),
+    role: integer('role').notNull(),
+    question: text('question').notNull(),
+    body: text('body'),
+    state: text('state', { enum: ['running', 'ready', 'failed'] }).notNull(),
+    startedAt: date('started_at').notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(1),
+  },
+  (table) => [unique().on(table.debateId, table.round, table.role)]
 )
