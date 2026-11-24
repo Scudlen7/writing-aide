@@ -1,11 +1,13 @@
 import { lazy, Suspense, useCallback, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import type { DocumentItem, DocumentVersion } from '@writing/documents'
 import type { Stage } from '@writing/writing'
 import {
   ArrowLeft,
   Download,
+  History,
+  Info,
   MessagesSquare,
   RotateCcw,
   Sparkles,
@@ -15,7 +17,13 @@ import {
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -26,6 +34,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Main } from '@/components/layout/main'
 import { request } from '@/features/writing/api'
@@ -74,7 +87,11 @@ export function DocumentDetail({
         : false,
   })
   return (
-    <Main id='writing-main' className='grid grid-cols-1 gap-5'>
+    <Main
+      id='writing-main'
+      fluid={detail.data?.format === 'docx' || detail.data?.format === 'doc'}
+      className='grid grid-cols-1 gap-5'
+    >
       <div>
         <Button variant='ghost' asChild>
           <Link to='/documents'>
@@ -115,8 +132,12 @@ function DocumentWorkspace({
 }) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const hash = useLocation({ select: (location) => location.hash })
   const client = useQueryClient()
   const input = useRef<HTMLInputElement>(null)
+  const confirmationTrigger = useRef<HTMLButtonElement>(null)
+  const [detailsOpen, setDetailsOpen] = useState(hash === 'document-details')
+  const [versionsOpen, setVersionsOpen] = useState(hash === 'document-versions')
   const [selection, setSelection] = useState<number | null>(null)
   const [stage, setStage] = useState<Stage>('goals')
   const [adviceStage, setAdviceStage] = useState<'outline' | 'revise'>(
@@ -143,6 +164,14 @@ function DocumentWorkspace({
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: documentsKey })
   }, [client])
+  const updateDetails = useMutation({
+    mutationFn: (data: { title: FormDataEntryValue | null; tags: string[] }) =>
+      request(path, 'PATCH', data),
+    onSuccess: () => {
+      setDetailsOpen(false)
+      refresh()
+    },
+  })
   const mutate = useMutation({
     mutationFn: ({
       suffix,
@@ -213,8 +242,17 @@ function DocumentWorkspace({
     setMinimized((items) => items.filter((item) => item !== 'aiWriting'))
   }
 
+  function askConfirmation(
+    target: 'trash' | 'delete' | DocumentVersion,
+    trigger: HTMLButtonElement
+  ) {
+    confirmationTrigger.current = trigger
+    mutate.reset()
+    setConfirmation(target)
+  }
+
   return (
-    <>
+    <Dialog open={versionsOpen} onOpenChange={setVersionsOpen}>
       <header className='flex flex-wrap items-start justify-between gap-2'>
         <div className='min-w-0 space-y-2'>
           <h1 className='text-2xl font-semibold wrap-break-word'>
@@ -228,6 +266,91 @@ function DocumentWorkspace({
           </div>
         </div>
         <div className='flex flex-wrap gap-2'>
+          {!entry.trashedAt && (
+            <Dialog
+              open={detailsOpen}
+              onOpenChange={(open) => {
+                if (open) updateDetails.reset()
+                setDetailsOpen(open)
+              }}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DialogTrigger asChild>
+                    <Button id='document-details' variant='outline'>
+                      <Info />
+                      {t('documents.details')}
+                    </Button>
+                  </DialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent
+                  side='bottom'
+                  sideOffset={6}
+                  className='max-w-xs text-start'
+                >
+                  <p className='line-clamp-2 font-medium wrap-anywhere'>
+                    {entry.title}
+                  </p>
+                  <p className='line-clamp-2 wrap-anywhere'>
+                    {entry.tags.join(', ') || t('documents.noTags')}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+              <DialogContent
+                aria-describedby={undefined}
+                closeLabel={t('close')}
+              >
+                <DialogHeader>
+                  <DialogTitle>{t('documents.details')}</DialogTitle>
+                </DialogHeader>
+                <form
+                  className='grid gap-4'
+                  key={JSON.stringify([entry.title, entry.tags])}
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    const form = new FormData(event.currentTarget)
+                    updateDetails.mutate({
+                      title: form.get('title'),
+                      tags: String(form.get('tags'))
+                        .split(/[,，]/u)
+                        .map((tag) => tag.trim())
+                        .filter(Boolean),
+                    })
+                  }}
+                >
+                  <Label className='grid gap-2'>
+                    {t('documents.name')}
+                    <Input
+                      name='title'
+                      defaultValue={entry.title}
+                      maxLength={180}
+                      required
+                    />
+                  </Label>
+                  <Label className='grid gap-2'>
+                    {t('documents.tags')}
+                    <Input
+                      name='tags'
+                      defaultValue={entry.tags.join(', ')}
+                      placeholder={t('documents.tagsHint')}
+                    />
+                  </Label>
+                  <Problem error={updateDetails.error} />
+                  <div className='flex justify-end'>
+                    <Button disabled={updateDetails.isPending}>
+                      {t('documents.saveDetails')}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+          <DialogTrigger asChild>
+            <Button id='document-versions' variant='outline'>
+              <History />
+              {t('documents.versions')}
+            </Button>
+          </DialogTrigger>
           {!entry.trashedAt && (
             <>
               {selected.format === 'writing' &&
@@ -296,13 +419,18 @@ function DocumentWorkspace({
               </Button>
               <Button
                 variant='destructive'
-                onClick={() => setConfirmation('delete')}
+                onClick={(event) =>
+                  askConfirmation('delete', event.currentTarget)
+                }
               >
                 {t('documents.delete')}
               </Button>
             </>
           ) : (
-            <Button variant='ghost' onClick={() => setConfirmation('trash')}>
+            <Button
+              variant='ghost'
+              onClick={(event) => askConfirmation('trash', event.currentTarget)}
+            >
               <Trash2 />
               {t('documents.moveToTrash')}
             </Button>
@@ -317,7 +445,7 @@ function DocumentWorkspace({
           </Button>
         </div>
       )}
-      <Problem error={mutate.error} />
+      {confirmation === null && <Problem error={mutate.error} />}
       <section
         key={`${entry.id}:${selection ?? 'current'}`}
         className='min-w-0'
@@ -436,58 +564,15 @@ function DocumentWorkspace({
               controls={controls('aiDebate')}
             />
           )}
-          <Card id='document-details'>
-            <CardHeader>
-              <CardTitle>{t('documents.details')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className='grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end'
-                key={JSON.stringify([entry.title, entry.tags])}
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  const form = new FormData(event.currentTarget)
-                  mutate.mutate({
-                    suffix: '',
-                    method: 'PATCH',
-                    data: {
-                      title: form.get('title'),
-                      tags: String(form.get('tags'))
-                        .split(/[,，]/u)
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
-                    },
-                  })
-                }}
-              >
-                <Label className='grid gap-2'>
-                  {t('documents.name')}
-                  <Input
-                    name='title'
-                    defaultValue={entry.title}
-                    maxLength={180}
-                    required
-                  />
-                </Label>
-                <Label className='grid gap-2'>
-                  {t('documents.tags')}
-                  <Input
-                    name='tags'
-                    defaultValue={entry.tags.join(', ')}
-                    placeholder={t('documents.tagsHint')}
-                  />
-                </Label>
-                <Button variant='outline' disabled={mutate.isPending}>
-                  {t('documents.saveDetails')}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
         </>
       )}
-      <Card id='document-versions'>
-        <CardHeader className='flex flex-wrap items-center justify-between gap-2'>
-          <CardTitle>{t('documents.versions')}</CardTitle>
+      <DialogContent
+        aria-describedby={undefined}
+        closeLabel={t('close')}
+        className='max-h-[85dvh] w-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)] sm:max-w-7xl'
+      >
+        <DialogHeader className='flex-row flex-wrap items-center justify-between gap-2 pe-6 text-start'>
+          <DialogTitle>{t('documents.versions')}</DialogTitle>
           {!entry.trashedAt && entry.source !== 'writing' && (
             <Button
               variant='outline'
@@ -498,8 +583,8 @@ function DocumentWorkspace({
               {t('documents.uploadVersion')}
             </Button>
           )}
-        </CardHeader>
-        <CardContent className='space-y-3'>
+        </DialogHeader>
+        <div className='min-w-0 space-y-3 overflow-y-auto'>
           <input
             type='file'
             ref={input}
@@ -557,13 +642,14 @@ function DocumentWorkspace({
                   <TableCell>
                     <Button
                       variant='link'
-                      onClick={() =>
+                      onClick={() => {
                         chooseVersion(
                           version.number === entry.currentVersion
                             ? null
                             : version.number
                         )
-                      }
+                        setVersionsOpen(false)
+                      }}
                     >
                       {t('documents.version', { number: version.number })}
                     </Button>
@@ -601,7 +687,9 @@ function DocumentWorkspace({
                           <Button
                             variant='ghost'
                             size='sm'
-                            onClick={() => setConfirmation(version)}
+                            onClick={(event) =>
+                              askConfirmation(version, event.currentTarget)
+                            }
                           >
                             {t('documents.restoreVersion')}
                           </Button>
@@ -612,11 +700,15 @@ function DocumentWorkspace({
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </div>
+      </DialogContent>
       <ConfirmDialog
         cancelBtnText={t('cancel')}
         open={confirmation !== null}
+        onCloseAutoFocus={() => {
+          confirmationTrigger.current?.focus()
+          confirmationTrigger.current = null
+        }}
         onOpenChange={(open) => {
           if (!open) setConfirmation(null)
         }}
@@ -660,7 +752,9 @@ function DocumentWorkspace({
               data: { base: entry.currentVersion },
             })
         }}
-      />
-    </>
+      >
+        <Problem error={mutate.error} />
+      </ConfirmDialog>
+    </Dialog>
   )
 }

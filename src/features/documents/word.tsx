@@ -251,7 +251,7 @@ function OfficeFrame({
         </p>
       )}
       {show && (
-        <div className='h-[75vh] min-h-96 overflow-hidden rounded-md border'>
+        <div className='h-[75vh] min-h-96 overflow-hidden rounded-md border md:h-[90dvh]'>
           <div id={id} />
         </div>
       )}

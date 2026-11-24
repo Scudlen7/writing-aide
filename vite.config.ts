@@ -27,10 +27,14 @@ export default defineConfig(({ mode }) => ({
       ? {
           // Route splitting hides these imports from the browser test scan.
           include: [
+            '@radix-ui/react-tabs',
             '@tanstack/react-query-devtools',
             '@tanstack/react-router-devtools',
+            'pdfjs-dist',
             'react-dom/client',
+            'react-markdown',
             'react-top-loading-bar',
+            'remark-gfm',
           ],
         }
       : undefined,
