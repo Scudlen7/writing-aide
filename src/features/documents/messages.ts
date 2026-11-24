@@ -70,6 +70,7 @@ const labels = {
   uploadVersion: ['上传新版本', 'Upload new version'],
   retryIndex: ['重试正文索引', 'Retry text indexing'],
   details: ['文档信息', 'Document details'],
+  noTags: ['无标签', 'No tags'],
   renameTags: ['重命名或编辑标签', 'Rename or edit tags'],
   saveDetails: ['保存', 'Save'],
   noText: ['此版本没有可搜索的文本。', 'This version has no searchable text.'],
