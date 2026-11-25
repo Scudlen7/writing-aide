@@ -218,9 +218,62 @@ const labels = {
   ],
   debateHistory: ['辩论记录', 'Debate history'],
   newDebate: ['新议题', 'New topic'],
+  debateSource: ['原文', 'Source text'],
+  debateSelectionHint: [
+    '拖选文字或点击要标记的段落。按 Enter 跳到下一处匹配，按 Shift+Enter 跳到上一处。',
+    'Select text or click a paragraph to mark it. Press Enter for the next match or Shift+Enter for the previous one.',
+  ],
+  debateNoSource: [
+    '这个版本暂无可选取的正文。',
+    'This version has no text available to select.',
+  ],
+  debateFindPassage: ['查找原文', 'Find in source text'],
+  debatePreviousMatch: ['上一处匹配', 'Previous match'],
+  debateNextMatch: ['下一处匹配', 'Next match'],
+  debateMatchCount: [
+    '第 {{current}} 处，共 {{total}} 处',
+    'Match {{current}} of {{total}}',
+  ],
+  debateMatchesFound: ['共 {{total}} 处匹配', '{{total}} matches found'],
+  debateNoMatches: ['没有找到匹配的文字。', 'No matching text.'],
+  debateCurrentParagraph: [
+    '当前位置：第 {{number}} 段',
+    'Current paragraph: {{number}}',
+  ],
+  debateAddSelection: ['加入选中文字', 'Add selected text'],
+  debateSetStart: ['设为起始段', 'Set start paragraph'],
+  debateRangeStart: ['起始段：第 {{number}} 段', 'Start paragraph: {{number}}'],
+  debateAddThrough: ['加入至当前段', 'Add through current paragraph'],
+  debateRangeBeforeStart: [
+    '请选择起始段或其后的段落作为结束段。',
+    'Choose the start paragraph or a later paragraph as the end.',
+  ],
+  debateSelectedPassages: ['已选片段', 'Selected passages'],
+  debateSelectedCount: [
+    '已选 {{length}} / {{limit}} 字符',
+    '{{length}} / {{limit}} characters selected',
+  ],
+  debateNoPassages: ['尚未加入选段。', 'No passages added yet.'],
+  debatePassageLocation: [
+    '第 {{start}}–{{end}} 段',
+    'Paragraphs {{start}}–{{end}}',
+  ],
+  debateRemovePassage: ['移除选段 {{number}}', 'Remove passage {{number}}'],
+  debateSelectionTooLong: [
+    '选段合计不能超过 {{limit}} 字符。请缩短选区或移除部分选段。',
+    'Select up to {{limit}} characters in total. Shorten the selection or remove a passage.',
+  ],
+  debateSelectionOverlap: [
+    '这段文字与已选片段重叠。',
+    'This text overlaps a selected passage.',
+  ],
+  debateSelectionEmpty: [
+    '请选择包含正文的片段。',
+    'Select a passage containing text.',
+  ],
   modelInput: [
     '模型读取议题、以下选段和本次 AI 辩论的前文。',
-    'The model receives the topic, this excerpt, and earlier turns from this AI debate.',
+    'The model receives the topic, the selected text, and earlier turns from this AI debate.',
   ],
   startDebate: ['发送并开始首轮', 'Send and start round one'],
   nextRound: ['发送并运行本轮', 'Send and run this round'],

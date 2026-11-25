@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   aiRoles,
+  type DebateExcerpt,
   type DebateRun,
   type DebateStep,
   type DebateTarget,
@@ -18,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { request } from '@/features/writing/api'
 import { Problem } from '@/features/writing/ui'
 import { discussionsKey, discussionsPath } from './api'
+import { DebateSelection } from './debate-selection'
 import { DocumentToolDialog, type ToolDialogControls } from './document-tools'
 
 const base = '/api/ai-debates'
@@ -93,6 +95,7 @@ function DebateEditor({
   )
   const [paragraph, setParagraph] = useState('')
   const [quote, setQuote] = useState({ text: '', offset: 0 })
+  const [excerpts, setExcerpts] = useState<DebateExcerpt[]>([])
   const [followUp, setFollowUp] = useState('')
   const [pending, setPending] = useState(false)
   const [waiting, setWaiting] = useState<{
@@ -101,6 +104,7 @@ function DebateEditor({
     question: string
   } | null>(null)
   const [error, setError] = useState<unknown>(null)
+  const isDocument = 'documentId' in target
   const selectedTarget = { ...target, version }
   const query = new URLSearchParams(
     Object.entries(selectedTarget).map(([key, value]) => [key, String(value)])
@@ -190,6 +194,7 @@ function DebateEditor({
     setTopic('')
     setParagraph('')
     setQuote({ text: '', offset: 0 })
+    setExcerpts([])
   }
 
   const messages = (
@@ -229,18 +234,27 @@ function DebateEditor({
         )}
       {options.data?.enabled && selection === null && (
         <form
-          className='grid gap-3'
+          className='grid min-w-0 grid-cols-1 gap-3'
           onSubmit={(event) => {
             event.preventDefault()
             void act(async () => {
               const created = await request<{ id: string }>(base, 'POST', {
                 target: selectedTarget,
                 topic,
-                anchor: {
-                  paragraph: Number(paragraph),
-                  offset: quote.offset,
-                  quote: quote.text,
-                },
+                ...(isDocument
+                  ? {
+                      ranges: excerpts.map(({ start, end }) => ({
+                        start,
+                        end,
+                      })),
+                    }
+                  : {
+                      anchor: {
+                        paragraph: Number(paragraph),
+                        offset: quote.offset,
+                        quote: quote.text,
+                      },
+                    }),
                 language,
               })
               setSelection(created.id)
@@ -249,7 +263,7 @@ function DebateEditor({
             })
           }}
         >
-          <Label className='grid gap-2'>
+          <Label className='grid min-w-0 gap-2'>
             {t('documents.topic')}
             <Input
               name='topic'
@@ -259,7 +273,7 @@ function DebateEditor({
               onChange={(event) => setTopic(event.target.value)}
             />
           </Label>
-          <Label className='grid gap-2'>
+          <Label className='grid min-w-0 gap-2'>
             {t('documents.paperLanguage')}
             <select
               name='language'
@@ -271,58 +285,79 @@ function DebateEditor({
               <option value='en'>English</option>
             </select>
           </Label>
-          <Label className='grid gap-2'>
-            {t('documents.paragraph')}
-            <select
-              className='rounded-md border bg-background p-2'
-              required
-              value={paragraph}
-              onChange={(event) => {
-                setParagraph(event.target.value)
-                const text = event.target.value
-                  ? options.data!.paragraphs[Number(event.target.value)]
-                  : ''
-                setQuote({ text: text.slice(0, 2000), offset: 0 })
-              }}
-            >
-              <option value=''>{t('documents.selectQuote')}</option>
-              {options.data.paragraphs.map((text, position) =>
-                text.trim() ? (
-                  <option key={position} value={position}>
-                    {position + 1} · {text.slice(0, 100)}
-                  </option>
-                ) : null
+          {isDocument ? (
+            options.data.paragraphs.some((text) => text.trim()) ? (
+              <DebateSelection
+                key={version}
+                paragraphs={options.data.paragraphs}
+                ranges={excerpts}
+                onChange={setExcerpts}
+              />
+            ) : (
+              <p role='status' className='text-sm text-muted-foreground'>
+                {t('documents.debateNoSource')}
+              </p>
+            )
+          ) : (
+            <>
+              <Label className='grid min-w-0 gap-2'>
+                {t('documents.paragraph')}
+                <select
+                  className='min-w-0 rounded-md border bg-background p-2'
+                  required
+                  value={paragraph}
+                  onChange={(event) => {
+                    setParagraph(event.target.value)
+                    const text = event.target.value
+                      ? options.data!.paragraphs[Number(event.target.value)]
+                      : ''
+                    setQuote({ text: text.slice(0, 2000), offset: 0 })
+                  }}
+                >
+                  <option value=''>{t('documents.selectQuote')}</option>
+                  {options.data.paragraphs.map((text, position) =>
+                    text.trim() ? (
+                      <option key={position} value={position}>
+                        {position + 1} · {text.slice(0, 100)}
+                      </option>
+                    ) : null
+                  )}
+                </select>
+              </Label>
+              {paragraph && (
+                <Textarea
+                  readOnly
+                  value={options.data.paragraphs[Number(paragraph)]}
+                  aria-label={t('documents.selectQuote')}
+                  onSelect={(event) => {
+                    const item = event.currentTarget
+                    if (item.selectionStart !== item.selectionEnd)
+                      setQuote({
+                        text: item.value
+                          .slice(item.selectionStart, item.selectionEnd)
+                          .slice(0, 2000),
+                        offset: item.selectionStart,
+                      })
+                  }}
+                />
               )}
-            </select>
-          </Label>
-          {paragraph && (
-            <Textarea
-              readOnly
-              value={options.data.paragraphs[Number(paragraph)]}
-              aria-label={t('documents.selectQuote')}
-              onSelect={(event) => {
-                const item = event.currentTarget
-                if (item.selectionStart !== item.selectionEnd)
-                  setQuote({
-                    text: item.value
-                      .slice(item.selectionStart, item.selectionEnd)
-                      .slice(0, 2000),
-                    offset: item.selectionStart,
-                  })
-              }}
-            />
-          )}
-          {quote.text && (
-            <div>
-              <p className='text-sm font-medium'>{t('documents.modelInput')}</p>
-              <blockquote className='border-s-2 ps-3 text-sm whitespace-pre-wrap text-muted-foreground'>
-                {quote.text}
-              </blockquote>
-            </div>
+              {quote.text && (
+                <div>
+                  <p className='text-sm font-medium'>
+                    {t('documents.modelInput')}
+                  </p>
+                  <blockquote className='border-s-2 ps-3 text-sm wrap-anywhere whitespace-pre-wrap text-muted-foreground'>
+                    {quote.text}
+                  </blockquote>
+                </div>
+              )}
+            </>
           )}
           <Button
             className='justify-self-start'
-            disabled={pending || !quote.text}
+            disabled={
+              pending || (isDocument ? excerpts.length === 0 : !quote.text)
+            }
           >
             {t('documents.startDebate')}
           </Button>
@@ -347,9 +382,18 @@ function DebateEditor({
             }
           >
             <p className='font-medium wrap-anywhere'>{data.topic}</p>
-            <blockquote className='border-s-2 ps-3 text-sm wrap-anywhere whitespace-pre-wrap text-muted-foreground'>
-              {data.anchor.quote}
-            </blockquote>
+            <div className='mt-2 grid gap-2'>
+              {(
+                data.excerpts?.map(({ text }) => text) ?? [data.anchor.quote]
+              ).map((text, index) => (
+                <blockquote
+                  key={index}
+                  className='border-s-2 ps-3 text-sm wrap-anywhere whitespace-pre-wrap text-muted-foreground'
+                >
+                  {text}
+                </blockquote>
+              ))}
+            </div>
           </header>
           {data.steps.map((step, position) => (
             <div key={step.id} className='grid min-w-0 gap-3'>
@@ -511,6 +555,7 @@ function DebateEditor({
     <DocumentToolDialog
       tool='aiDebate'
       controls={controls}
+      followConversation={selection !== null}
       footer={composer}
       toolbar={
         <div className='flex flex-wrap items-center gap-2'>

@@ -1,8 +1,18 @@
 import { z } from 'zod'
 import { and, asc, desc, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { debateTarget, type DebateTarget } from '../shared/debate.ts'
-import { discussionAnchor } from '../shared/discussions.ts'
+import {
+  debateExcerptLimit,
+  debateRange,
+  debateTarget,
+  type DebateExcerpt,
+  type DebateRange,
+  type DebateTarget,
+} from '../shared/debate.ts'
+import {
+  discussionAnchor,
+  type DiscussionAnchor,
+} from '../shared/discussions.ts'
 import { blockText, type Identity } from '../shared/writing.ts'
 import { aiEnabled, requestModel } from './ai.ts'
 import { accessibleAssignment, assignmentForWrite } from './assignments.ts'
@@ -23,13 +33,78 @@ import {
 } from './schema.ts'
 
 const roles = [
-  'Supporter: make the strongest defensible case for the claim and point to specific evidence in the excerpt or the user-supplied evidence.',
+  'Supporter: make the strongest defensible case for the claim and point to specific evidence in the selected excerpts or the user-supplied evidence.',
   'Challenger: explicitly respond to the supporter and identify a concrete evidentiary gap, counterexample or limit.',
   'Synthesizer: explicitly respond to both positions, distinguish agreements from disagreements, and list verifiable next steps.',
 ] as const
 const running = new Set<string>()
 const params = z.object({ id: z.uuid() })
 const modelStatement = z.object({ body: z.string().trim().min(1).max(1600) })
+
+function comparePosition(a: DebateRange['start'], b: DebateRange['start']) {
+  return a.paragraph - b.paragraph || a.offset - b.offset
+}
+
+function reviewAnchor({ paragraph, offset, quote }: DiscussionAnchor) {
+  return { paragraph, offset, quote }
+}
+
+function selectExcerpts(paragraphs: string[], ranges: DebateRange[]) {
+  const excerpts: DebateExcerpt[] = []
+  let anchor: DiscussionAnchor | undefined
+  let previous: DebateRange['end'] | undefined
+  let length = 0
+  for (const { start, end } of ranges.toSorted((a, b) =>
+    comparePosition(a.start, b.start)
+  )) {
+    const first = paragraphs[start.paragraph]
+    const last = paragraphs[end.paragraph]
+    if (
+      first === undefined ||
+      last === undefined ||
+      start.offset > first.length ||
+      end.offset > last.length ||
+      comparePosition(start, end) >= 0 ||
+      (previous && comparePosition(previous, start) > 0)
+    )
+      throw new ApiError(422, 'invalidAnnotation')
+
+    const parts = []
+    for (
+      let paragraph = start.paragraph;
+      paragraph <= end.paragraph;
+      paragraph++
+    ) {
+      const line = paragraphs[paragraph]
+      const from = paragraph === start.paragraph ? start.offset : 0
+      const to = paragraph === end.paragraph ? end.offset : line.length
+      length += to - from + Number(paragraph !== start.paragraph)
+      if (length > debateExcerptLimit)
+        throw new ApiError(422, 'invalidAnnotation')
+      const part = line.slice(from, to)
+      parts.push(part)
+      if (!anchor && part.trim()) {
+        const content = part.trimStart()
+        const quote = content.slice(
+          0,
+          discussionAnchor.shape.quote.maxLength ?? undefined
+        )
+        anchor = {
+          paragraph,
+          offset: from + part.length - content.length,
+          quote: quote.isWellFormed() ? quote : quote.slice(0, -1),
+        }
+      }
+    }
+    const text = parts.join('\n')
+    if (!text.trim() || !text.isWellFormed())
+      throw new ApiError(422, 'invalidAnnotation')
+    excerpts.push({ start, end, text })
+    previous = end
+  }
+  if (!anchor) throw new ApiError(422, 'invalidAnnotation')
+  return { ...anchor, excerpts }
+}
 
 function statement(result: unknown) {
   const { body } = modelStatement.parse(result)
@@ -166,30 +241,47 @@ export async function debateRoutes(app: FastifyInstance) {
       )
       .orderBy(desc(debate.createdAt))
       .limit(30)
-    return { enabled: aiEnabled, paragraphs: target.paragraphs, runs }
+    return {
+      enabled: aiEnabled,
+      paragraphs: target.paragraphs,
+      runs: runs.map((run) => ({ ...run, anchor: reviewAnchor(run.anchor) })),
+    }
   })
 
   app.post('/api/ai-debates', async (request) => {
     const person = await identity(request)
     if (!aiEnabled) throw new ApiError(503, 'aiDisabled')
     const input = read(
-      z.object({
-        target: debateTarget,
-        topic: z.string().trim().min(1).max(1000),
-        anchor: discussionAnchor,
-        language: z.enum(['zh-CN', 'en']),
-      }),
+      z
+        .object({
+          target: debateTarget,
+          topic: z.string().trim().min(1).max(1000),
+          anchor: discussionAnchor.optional(),
+          ranges: z
+            .array(debateRange)
+            .min(1)
+            .max(debateExcerptLimit)
+            .optional(),
+          language: z.enum(['zh-CN', 'en']),
+        })
+        .refine(({ anchor, ranges, target }) =>
+          ranges ? !anchor && 'documentId' in target : !!anchor
+        ),
       request.body
     )
     const target = await selectedTarget(person, input.target)
     if (!target.permitted) throw new ApiError(403, 'forbidden')
-    if (
-      !target.paragraphs[input.anchor.paragraph]?.startsWith(
+    let anchor: typeof debate.$inferSelect.anchor
+    if (input.ranges) anchor = selectExcerpts(target.paragraphs, input.ranges)
+    else if (
+      input.anchor?.quote.isWellFormed() &&
+      target.paragraphs[input.anchor.paragraph]?.startsWith(
         input.anchor.quote,
         input.anchor.offset
       )
     )
-      throw new ApiError(422, 'invalidAnnotation')
+      anchor = input.anchor
+    else throw new ApiError(422, 'invalidAnnotation')
     const [run] = await db
       .insert(debate)
       .values({
@@ -198,7 +290,7 @@ export async function debateRoutes(app: FastifyInstance) {
         submissionId: target.submissionId,
         version: input.target.version,
         language: target.language ?? input.language,
-        anchor: input.anchor,
+        anchor,
         topic: input.topic,
       })
       .returning({ id: debate.id })
@@ -214,7 +306,12 @@ export async function debateRoutes(app: FastifyInstance) {
       .from(step)
       .where(eq(step.debateId, id))
       .orderBy(asc(step.round), asc(step.role))
-    return { ...run, steps }
+    return {
+      ...run,
+      anchor: reviewAnchor(run.anchor),
+      excerpts: run.anchor.excerpts,
+      steps,
+    }
   })
 
   app.post('/api/ai-debates/:id/step', async (request) => {
@@ -310,7 +407,9 @@ export async function debateRoutes(app: FastifyInstance) {
             system,
             {
               topic: run.topic,
-              excerpt: run.anchor.quote,
+              ...(run.anchor.excerpts
+                ? { excerpts: run.anchor.excerpts.map(({ text }) => text) }
+                : { excerpt: run.anchor.quote }),
               question: job.question,
               earlier: previous.map((item) => ({
                 round: item.round,
@@ -407,7 +506,7 @@ export async function debateRoutes(app: FastifyInstance) {
           authorId: person.id,
           body: source.body,
           ai: true,
-          anchor: run.anchor,
+          anchor: reviewAnchor(run.anchor),
         })
         .returning({ id: reviewMessage.id })
       return message

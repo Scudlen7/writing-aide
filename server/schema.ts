@@ -13,6 +13,7 @@ import {
   boolean,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import type { DebateExcerpt } from '../shared/debate.ts'
 import type {
   DiscussionAnchor,
   DiscussionDecision,
@@ -524,7 +525,9 @@ export const aiDebate = pgTable(
     version: integer('version').notNull(),
     language: text('language', { enum: ['zh-CN', 'en'] }).notNull(),
     topic: text('topic').notNull(),
-    anchor: jsonb('anchor').$type<DiscussionAnchor>().notNull(),
+    anchor: jsonb('anchor')
+      .$type<DiscussionAnchor & { excerpts?: DebateExcerpt[] }>()
+      .notNull(),
     createdAt: date('created_at').notNull().defaultNow(),
   },
   (table) => [
