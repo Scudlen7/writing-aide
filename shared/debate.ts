@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { DiscussionAnchor } from './discussions.ts'
+import { discussionAnchor, type DiscussionAnchor } from './discussions.ts'
 
 export const aiRoles = ['support', 'challenge', 'summarize'] as const
 export const debateTarget = z.union([
@@ -13,6 +13,15 @@ export const debateTarget = z.union([
   }),
 ])
 export type DebateTarget = z.infer<typeof debateTarget>
+
+export const debateExcerptLimit = 6000
+const debatePosition = discussionAnchor.pick({ paragraph: true, offset: true })
+export const debateRange = z.object({
+  start: debatePosition,
+  end: debatePosition,
+})
+export type DebateRange = z.infer<typeof debateRange>
+export type DebateExcerpt = DebateRange & { text: string }
 
 export interface DebateStep {
   id: string
@@ -28,5 +37,6 @@ export interface DebateRun {
   topic: string
   version: number
   anchor: DiscussionAnchor
+  excerpts?: DebateExcerpt[]
   steps: DebateStep[]
 }

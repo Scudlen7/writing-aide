@@ -1,6 +1,7 @@
 import {
   useCallback,
   useContext,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -8,6 +9,7 @@ import {
 import { LayoutList, Minus, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,20 +42,23 @@ export function DocumentToolDialog({
   toolbar,
   children,
   footer,
+  followConversation = tool === 'aiWriting' || tool === 'aiDebate',
 }: {
   tool: DialogTool
   controls: ToolDialogControls
   toolbar?: ReactNode
   children: ReactNode
   footer?: ReactNode
+  followConversation?: boolean
 }) {
   const { t } = useTranslation()
   const title = useRef<HTMLHeadingElement>(null)
+  const scrollViewport = useRef<HTMLDivElement>(null)
   const scrollTop = useRef(0)
-  const followsConversation = tool === 'aiWriting' || tool === 'aiDebate'
-  const scrollToEnd = useRef(followsConversation)
+  const scrollToEnd = useRef(followConversation)
   const scrollObserver = useRef<ResizeObserver | null>(null)
   const attachScroll = useCallback((viewport: HTMLDivElement | null) => {
+    scrollViewport.current = viewport
     scrollObserver.current?.disconnect()
     if (!viewport) return
     const moveToEnd = () => {
@@ -67,6 +72,14 @@ export function DocumentToolDialog({
       scrollObserver.current.observe(content)
     }
   }, [])
+
+  useLayoutEffect(() => {
+    scrollToEnd.current = followConversation
+    scrollTop.current = 0
+    const viewport = scrollViewport.current
+    if (viewport)
+      viewport.scrollTop = followConversation ? viewport.scrollHeight : 0
+  }, [followConversation])
 
   return (
     <Dialog
@@ -86,7 +99,12 @@ export function DocumentToolDialog({
           event.preventDefault()
           controls.restoreFocus()
         }}
-        className='flex h-[min(46rem,calc(100dvh-2rem))] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl'
+        className={cn(
+          'flex h-[min(46rem,calc(100dvh-2rem))] min-h-0 flex-col gap-0 overflow-hidden p-0',
+          tool === 'aiDebate'
+            ? 'w-[calc(100%-2rem)] sm:max-w-6xl'
+            : 'sm:max-w-3xl'
+        )}
       >
         <DialogHeader className='flex shrink-0 flex-row items-center justify-between gap-2 border-b px-4 py-2 sm:px-5'>
           <DialogTitle
@@ -124,18 +142,23 @@ export function DocumentToolDialog({
           <div className='shrink-0 border-b px-4 py-2 sm:px-5'>{toolbar}</div>
         )}
         <div
-          className='min-h-0 flex-1 overflow-y-auto overscroll-contain'
+          className='min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain'
           ref={attachScroll}
           onScroll={(event) => {
             const element = event.currentTarget
             scrollTop.current = element.scrollTop
             scrollToEnd.current =
-              followsConversation &&
+              followConversation &&
               element.scrollHeight - element.clientHeight - element.scrollTop <
                 32
           }}
         >
-          <div className='mx-auto grid max-w-2xl min-w-0 gap-4 px-4 py-4 sm:px-5'>
+          <div
+            className={cn(
+              'mx-auto grid min-w-0 grid-cols-1 gap-4 px-4 py-4 sm:px-5',
+              tool !== 'aiDebate' && 'max-w-2xl'
+            )}
+          >
             {children}
           </div>
         </div>

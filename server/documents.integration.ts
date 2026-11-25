@@ -110,7 +110,7 @@ test('private document versions, search, invitations and debate recovery', async
           : {}),
       },
     })
-  const source = '字體繁體與中文短語\nEvidence supports the claim.\r\n'
+  const source = `字體繁體與中文短語😀\nEvidence supports the claim.\r\n${'x'.repeat(6001)}`
   const md = await call(
     owner,
     'POST',
@@ -413,6 +413,7 @@ test('private document versions, search, invitations and debate recovery', async
   assert.equal(debate.statusCode, 200, debate.body)
   const run = `/api/ai-debates/${debate.json().id}`
   assert.equal((await call(reviewer, 'GET', run)).statusCode, 404)
+  assert.equal((await call(owner, 'GET', run)).json().excerpts, undefined)
   const step = (role: number) =>
     call(owner, 'POST', `${run}/step`, { round: 1, role })
   assert.equal((await step(1)).statusCode, 409)
@@ -425,6 +426,10 @@ test('private document versions, search, invitations and debate recovery', async
   assert.match(prompts[3], /Fixture evidence 1/u)
   assert.match(prompts[3], /Fixture evidence 3/u)
   assert.equal(
+    JSON.parse(JSON.parse(prompts[3]).messages[1].content).excerpt,
+    'Evidence supports the claim.'
+  )
+  assert.equal(
     (
       await call(owner, 'POST', `${run}/share`, {
         threadId: invited.json().id,
@@ -432,6 +437,107 @@ test('private document versions, search, invitations and debate recovery', async
       })
     ).statusCode,
     200
+  )
+
+  const ranges = [
+    { start: { paragraph: 0, offset: 9 }, end: { paragraph: 1, offset: 8 } },
+    { start: { paragraph: 1, offset: 22 }, end: { paragraph: 1, offset: 28 } },
+  ]
+  const multiInput = {
+    target: { documentId: id, version: 1 },
+    topic: 'Compare evidence across paragraphs',
+    language: 'en',
+  }
+  const multi = await call(owner, 'POST', '/api/ai-debates', {
+    ...multiInput,
+    ranges: ranges.toReversed(),
+  })
+  assert.equal(multi.statusCode, 200, multi.body)
+  const multiPath = `/api/ai-debates/${multi.json().id}`
+  const saved = (await call(owner, 'GET', multiPath)).json()
+  assert.equal(saved.version, 1)
+  assert.deepEqual(saved.excerpts, [
+    { ...ranges[0], text: '😀\nEvidence' },
+    { ...ranges[1], text: 'claim.' },
+  ])
+  const shareAnchor = { paragraph: 0, offset: 9, quote: '😀' }
+  assert.deepEqual(saved.anchor, shareAnchor)
+  const { runs } = (
+    await call(owner, 'GET', `/api/ai-debates?documentId=${id}&version=1`)
+  ).json()
+  assert.deepEqual(
+    runs.find((entry: { id: string }) => entry.id === multi.json().id),
+    {
+      id: multi.json().id,
+      topic: multiInput.topic,
+      version: 1,
+      anchor: shareAnchor,
+    }
+  )
+  const answer = await call(owner, 'POST', `${multiPath}/step`, {
+    round: 1,
+    role: 0,
+  })
+  assert.equal(answer.statusCode, 200, answer.body)
+  const input = JSON.parse(JSON.parse(prompts.at(-1)!).messages[1].content)
+  assert.deepEqual(input.excerpts, ['😀\nEvidence', 'claim.'])
+  const shared = await call(owner, 'POST', `${multiPath}/share`, {
+    threadId: invited.json().id,
+    stepId: answer.json().id,
+  })
+  assert.equal(shared.statusCode, 200, shared.body)
+  const { messages: updated } = (await call(owner, 'GET', review)).json()
+  assert.deepEqual(
+    updated.find((message: { id: string }) => message.id === shared.json().id)
+      .anchor,
+    shareAnchor
+  )
+
+  const longRange = {
+    start: { paragraph: 2, offset: 0 },
+    end: { paragraph: 2, offset: 6000 },
+  }
+  const fullBudget = await call(owner, 'POST', '/api/ai-debates', {
+    ...multiInput,
+    ranges: [longRange],
+  })
+  assert.equal(fullBudget.statusCode, 200, fullBudget.body)
+  const full = (
+    await call(owner, 'GET', `/api/ai-debates/${fullBudget.json().id}`)
+  ).json()
+  assert.equal(full.excerpts[0].text.length, 6000)
+  assert.equal(full.anchor.quote.length, 2000)
+  for (const invalid of [
+    [longRange, ranges[0]],
+    [ranges[0], ranges[0]],
+    [{ start: ranges[0].end, end: ranges[0].start }],
+    [{ ...ranges[0], end: { paragraph: 4, offset: 0 } }],
+    [{ ...ranges[0], start: { paragraph: 0, offset: 10 } }],
+  ]) {
+    const rejected = await call(owner, 'POST', '/api/ai-debates', {
+      ...multiInput,
+      ranges: invalid,
+    })
+    assert.equal(rejected.statusCode, 422, rejected.body)
+  }
+  assert.equal(
+    (
+      await call(owner, 'POST', '/api/ai-debates', {
+        ...multiInput,
+        target: { documentId: id, version: 2 },
+        ranges,
+      })
+    ).statusCode,
+    422
+  )
+  assert.equal(
+    (
+      await call(outsider, 'POST', '/api/ai-debates', {
+        ...multiInput,
+        ranges,
+      })
+    ).statusCode,
+    404
   )
 
   assert.equal(
